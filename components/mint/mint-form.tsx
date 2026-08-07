@@ -4,11 +4,14 @@ import { useSelectedWalletAccount } from "@solana/react";
 import { useWalletAccountTransactionSigner } from "@solana/react";
 import type { UiWalletAccount } from "@wallet-standard/react";
 import Image from "next/image";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import { Button, Input } from "@/components/design";
 import { ProgressModal } from "@/components/progress-modal";
+import { useToast } from "@/components/toast/toast-provider";
 import type { ProgressStepDef } from "@/components/progress-steps";
-import { MAX_EDITIONS, mintNfts, type MintStage } from "@/lib/mint/mint";
+import { MAX_SUPPLY, mintNfts, type MintStage } from "@/lib/mint/mint";
 import { explorerAddressUrl, getSolanaChain } from "@/lib/solana/config";
 import { createUmiForWallet } from "@/lib/solana/umi";
 import { createClient } from "@/lib/supabase/client";
@@ -20,12 +23,33 @@ const MINT_STEPS: ProgressStepDef[] = [
   { key: "recording", label: "Saving to Solarium" },
 ];
 
+const FIELD_LABEL: React.CSSProperties = {
+  display: "block",
+  font: "var(--type-label)",
+  fontSize: "var(--text-2xs)",
+  textTransform: "uppercase",
+  letterSpacing: "var(--tracking-label)",
+  color: "var(--text-tertiary)",
+  marginBottom: "var(--space-4)",
+};
+const TEXTAREA: React.CSSProperties = {
+  width: "100%",
+  padding: "var(--space-5)",
+  background: "var(--surface-inset)",
+  border: "1px solid var(--border-default)",
+  borderRadius: "var(--radius-control)",
+  color: "var(--text-primary)",
+  fontFamily: "var(--font-sans)",
+  fontSize: "var(--text-md)",
+  resize: "vertical",
+};
+
 export function MintForm({ creatorId }: { creatorId: string }) {
   const [selectedWalletAccount] = useSelectedWalletAccount();
 
   if (!selectedWalletAccount) {
     return (
-      <p className="rounded-xl border border-zinc-200 p-4 text-sm text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+      <p style={{ margin: 0, padding: "var(--space-7)", borderRadius: "var(--radius-card)", border: "1px solid var(--border-subtle)", background: "var(--surface-card)", fontSize: "var(--text-md)", color: "var(--text-secondary)" }}>
         Connect your wallet (top right) to mint.
       </p>
     );
@@ -49,6 +73,7 @@ function MintFormInner({
   const [phase, setPhase] = useState<"idle" | "active" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [minted, setMinted] = useState<string[] | null>(null);
+  const [mintedCollectionId, setMintedCollectionId] = useState<string | null>(null);
 
   const kitSigner = useWalletAccountTransactionSigner(
     account,
@@ -56,48 +81,57 @@ function MintFormInner({
   );
   const umi = useMemo(() => createUmiForWallet(kitSigner), [kitSigner]);
   const supabase = useMemo(() => createClient(), []);
+  const { showToast } = useToast();
   const busy = phase === "active";
 
   if (minted) {
     return (
-      <div className="flex flex-col gap-4 rounded-xl border border-zinc-200 p-6 dark:border-zinc-800">
-        <h2 className="text-lg font-medium">
-          Minted {minted.length} {minted.length === 1 ? "NFT" : "editions"} 🎉
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)", padding: "var(--space-8)", borderRadius: "var(--radius-card)", border: "1px solid var(--border-subtle)", background: "var(--surface-card)" }}>
+        <h2 style={{ font: "var(--type-h3)", color: "var(--text-primary)", margin: 0 }}>
+          Minted {minted.length} {minted.length === 1 ? "item" : "items"}
         </h2>
-        <ul className="flex flex-col gap-1 text-sm text-zinc-600 dark:text-zinc-400">
+        <ul style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)", margin: 0, padding: 0, listStyle: "none" }}>
           {minted.map((address) => (
             <li key={address}>
-              <a
-                className="font-mono underline-offset-4 hover:underline"
-                href={explorerAddressUrl(address)}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-link)" }} href={explorerAddressUrl(address)} target="_blank" rel="noopener noreferrer">
                 {address.slice(0, 8)}…{address.slice(-8)}
               </a>
             </li>
           ))}
         </ul>
-        <button
-          className="self-start rounded-full border border-zinc-300 px-4 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          onClick={() => {
-            setMinted(null);
-            setFile(null);
-            setPreview(null);
-            setName("");
-            setDescription("");
-            setQuantity(1);
-          }}
-        >
-          Mint another
-        </button>
+        <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-secondary)", textWrap: "pretty" }}>
+          {mintedCollectionId
+            ? "Next: open your drop to add mint phases and list these items for sale."
+            : "Next: list these items for sale from your portfolio."}
+        </p>
+        <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
+          <Link href={mintedCollectionId ? `/launchpad/${mintedCollectionId}` : "/collection"} style={{ textDecoration: "none" }}>
+            <Button variant="primary" iconRight="arrow-right">
+              {mintedCollectionId ? "Set up drop & list items" : "View in portfolio"}
+            </Button>
+          </Link>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setMinted(null);
+              setMintedCollectionId(null);
+              setFile(null);
+              setPreview(null);
+              setName("");
+              setDescription("");
+              setQuantity(1);
+            }}
+          >
+            Mint another
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
     <form
-      className="flex flex-col gap-6"
+      style={{ display: "flex", flexDirection: "column", gap: "var(--space-8)" }}
       onSubmit={async (event) => {
         event.preventDefault();
         if (!file) {
@@ -119,31 +153,41 @@ function MintFormInner({
             onStage: setStage,
           });
           setMinted(result.assetAddresses);
+          setMintedCollectionId(result.collectionId);
           setPhase("idle");
           setStage(null);
+          showToast({ type: "success", title: "Mint complete", message: `${result.assetAddresses.length} × ${name.trim() || "item"}` });
         } catch (e) {
           setError(e instanceof Error ? e.message : "Minting failed.");
           setPhase("error");
         }
       }}
     >
-      <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-300 p-6 text-sm text-zinc-500 hover:border-zinc-400 dark:border-zinc-700 dark:hover:border-zinc-500">
+      <label
+        style={{
+          display: "flex",
+          cursor: "pointer",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "var(--space-4)",
+          padding: "var(--space-9)",
+          borderRadius: "var(--radius-card)",
+          border: "1px dashed var(--border-strong)",
+          background: "var(--surface-inset)",
+          fontSize: "var(--text-md)",
+          color: "var(--text-tertiary)",
+        }}
+      >
         {preview ? (
-          <Image
-            src={preview}
-            alt="Preview"
-            width={320}
-            height={320}
-            className="max-h-64 w-auto rounded-lg object-contain"
-            unoptimized
-          />
+          <Image src={preview} alt="Preview" width={320} height={320} style={{ maxHeight: 256, width: "auto", borderRadius: "var(--radius-media)", objectFit: "contain" }} unoptimized />
         ) : (
           <span>Click to choose an image</span>
         )}
         <input
           type="file"
           accept="image/*"
-          className="hidden"
+          style={{ display: "none" }}
           onChange={(event) => {
             const chosen = event.target.files?.[0] ?? null;
             setFile(chosen);
@@ -152,63 +196,39 @@ function MintFormInner({
         />
       </label>
 
-      <label className="flex flex-col gap-2 text-sm font-medium">
-        Name
-        <input
-          type="text"
-          required
-          maxLength={100}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="My artwork"
-          className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 font-normal outline-none focus:border-zinc-500 dark:border-zinc-700"
-        />
-      </label>
+      <div>
+        <label style={FIELD_LABEL}>Name</label>
+        <Input required maxLength={100} value={name} onChange={(event) => setName(event.target.value)} placeholder="My artwork" />
+      </div>
 
-      <label className="flex flex-col gap-2 text-sm font-medium">
-        Description <span className="font-normal text-zinc-500">(optional)</span>
-        <textarea
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          rows={3}
-          maxLength={2000}
-          className="resize-none rounded-lg border border-zinc-300 bg-transparent px-3 py-2 font-normal outline-none focus:border-zinc-500 dark:border-zinc-700"
-        />
-      </label>
+      <div>
+        <label style={FIELD_LABEL}>Description (optional)</label>
+        <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} maxLength={2000} style={TEXTAREA} />
+      </div>
 
-      <label className="flex flex-col gap-2 text-sm font-medium">
-        Editions
-        <input
+      <div>
+        <label style={FIELD_LABEL}>Supply</label>
+        <Input
           type="number"
           min={1}
-          max={MAX_EDITIONS}
+          max={MAX_SUPPLY}
+          numeric
           value={quantity}
-          onChange={(event) =>
-            setQuantity(
-              Math.min(
-                MAX_EDITIONS,
-                Math.max(1, Number(event.target.value) || 1)
-              )
-            )
-          }
-          className="w-24 rounded-lg border border-zinc-300 bg-transparent px-3 py-2 font-normal outline-none focus:border-zinc-500 dark:border-zinc-700"
+          onChange={(event) => setQuantity(Math.min(MAX_SUPPLY, Math.max(1, Number(event.target.value) || 1)))}
+          containerStyle={{ width: 120 }}
         />
-        <span className="font-normal text-zinc-500">
-          Mint up to {MAX_EDITIONS} numbered copies of this artwork.
+        <span style={{ display: "block", marginTop: "var(--space-4)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>
+          Create up to {MAX_SUPPLY} items in one collection.
         </span>
-      </label>
+      </div>
 
-      {error && phase !== "error" && (
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-      )}
+      {error && phase !== "error" && <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--price-down)" }}>{error}</p>}
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-black dark:hover:bg-zinc-300"
-      >
-        {busy ? "Minting…" : quantity > 1 ? `Mint ${quantity} editions` : "Mint"}
-      </button>
+      <div>
+        <Button type="submit" variant="primary" icon="sparkle" loading={busy} disabled={busy}>
+          {quantity > 1 ? `Mint ${quantity} items` : "Mint"}
+        </Button>
+      </div>
 
       {phase !== "idle" && (
         <ProgressModal

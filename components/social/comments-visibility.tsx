@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { Icon } from "@/components/design";
+
 type CommentsVisibilityContextValue = {
   expanded: boolean;
   toggle: () => void;
@@ -56,10 +58,27 @@ export function CommentsToggleButton() {
       type="button"
       onClick={toggle}
       aria-pressed={expanded}
-      className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-600 transition-colors hover:border-zinc-300 dark:border-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-700"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "var(--space-4)",
+        height: "var(--control-h-md)",
+        padding: "0 var(--space-6)",
+        borderRadius: "var(--radius-pill)",
+        border: `1px solid ${expanded ? "var(--accent-2)" : "var(--border-default)"}`,
+        background: "var(--surface-2)",
+        color: expanded ? "var(--accent-2)" : "var(--text-body)",
+        fontFamily: "var(--font-sans)",
+        fontSize: "var(--text-md)",
+        fontWeight: "var(--weight-semibold)",
+        cursor: "pointer",
+        transition: "var(--transition-control)",
+      }}
     >
-      <span aria-hidden>💬</span>
-      {count}
+      <Icon name="message-circle" size={15} />
+      <span style={{ fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums", fontSize: "var(--text-xs)" }}>
+        {count}
+      </span>
     </button>
   );
 }

@@ -1,0 +1,256 @@
+/* Solarium design tokens, ported from the "Solarium NFT marketplace system" Claude Design
+   project (ui_kits/marketplace_web). Dark is the default theme; [data-theme="light"] overrides.
+   This file only defines custom properties, keyframes, and two opt-in utility classes — it does
+   not touch any existing element selectors, so nothing in the current app changes by importing it.
+   Consumed by components/design/*. See docs/design-system-roadmap.md for adoption plan. */
+
+:root {
+  /* neutral ramp (warm-cast, dark-first) */
+  --gray-0: oklch(0.09 0.006 70);
+  --gray-1: oklch(0.13 0.007 70);
+  --gray-2: oklch(0.17 0.008 70);
+  --gray-3: oklch(0.22 0.009 70);
+  --gray-4: oklch(0.30 0.010 70);
+  --gray-5: oklch(0.42 0.010 70);
+  --gray-6: oklch(0.56 0.010 70);
+  --gray-7: oklch(0.70 0.008 70);
+  --gray-8: oklch(0.84 0.006 70);
+  --gray-9: oklch(0.94 0.004 70);
+  --gray-10: oklch(0.98 0.003 70);
+
+  /* accents: solar amber (primary) and cold cyan (secondary) share chroma/lightness */
+  --solar-1: oklch(0.30 0.070 70);
+  --solar-2: oklch(0.50 0.120 70);
+  --solar-3: oklch(0.78 0.160 70);
+  --solar-4: oklch(0.88 0.110 70);
+  --cyan-1: oklch(0.30 0.070 200);
+  --cyan-2: oklch(0.50 0.110 200);
+  --cyan-3: oklch(0.78 0.160 200);
+  --cyan-4: oklch(0.88 0.100 200);
+
+  /* trading semantics — only ever on numbers/tint chips, never button fills */
+  --up-1: oklch(0.30 0.070 152);
+  --up-3: oklch(0.78 0.160 152);
+  --down-1: oklch(0.30 0.080 25);
+  --down-3: oklch(0.72 0.170 25);
+  --warn-3: oklch(0.80 0.150 95);
+
+  /* semantic aliases */
+  --bg-page: var(--gray-0);
+  --bg-sunken: oklch(0.06 0.005 70);
+  --surface-1: var(--gray-1);
+  --surface-2: var(--gray-2);
+  --surface-3: var(--gray-3);
+  --surface-card: var(--gray-1);
+  --surface-overlay: oklch(0.15 0.008 70);
+  --surface-hover: oklch(0.20 0.009 70);
+  --surface-active: oklch(0.24 0.010 70);
+  --surface-inset: oklch(0.11 0.006 70);
+
+  --text-primary: var(--gray-10);
+  --text-body: var(--gray-9);
+  --text-secondary: var(--gray-7);
+  --text-tertiary: var(--gray-6);
+  --text-disabled: var(--gray-5);
+  --text-on-accent: oklch(0.14 0.030 70);
+  --text-link: var(--solar-3);
+  --text-link-hover: var(--solar-4);
+
+  --border-subtle: oklch(0.22 0.008 70);
+  --border-default: oklch(0.28 0.009 70);
+  --border-strong: oklch(0.38 0.010 70);
+  --border-accent: var(--solar-3);
+  --border-focus: var(--cyan-3);
+
+  --accent: var(--solar-3);
+  --accent-hover: var(--solar-4);
+  --accent-quiet: var(--solar-1);
+  --accent-2: var(--cyan-3);
+  --accent-2-quiet: var(--cyan-1);
+
+  --price-up: var(--up-3);
+  --price-up-bg: var(--up-1);
+  --price-down: var(--down-3);
+  --price-down-bg: var(--down-1);
+  --live: var(--up-3);
+
+  --scrim: oklch(0.05 0.004 70 / 0.72);
+
+  /* type — --font-space-grotesk / --font-jetbrains-mono come from next/font in app/layout.tsx */
+  --font-sans: var(--font-space-grotesk), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-numeric: var(--font-mono);
+
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+  --text-3xl: 34px;
+  --text-4xl: 46px;
+  --text-5xl: 64px;
+
+  --leading-tight: 1.05;
+  --leading-snug: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --tracking-display: -0.03em;
+  --tracking-heading: -0.015em;
+  --tracking-normal: 0em;
+  --tracking-label: 0.08em;
+  --tracking-mono: -0.01em;
+
+  --type-display: var(--weight-bold) var(--text-4xl) / var(--leading-tight) var(--font-sans);
+  --type-h1: var(--weight-bold) var(--text-3xl) / var(--leading-tight) var(--font-sans);
+  --type-h2: var(--weight-semibold) var(--text-2xl) / var(--leading-snug) var(--font-sans);
+  --type-h3: var(--weight-semibold) var(--text-xl) / var(--leading-snug) var(--font-sans);
+  --type-body: var(--weight-regular) var(--text-base) / var(--leading-normal) var(--font-sans);
+  --type-body-sm: var(--weight-regular) var(--text-md) / var(--leading-normal) var(--font-sans);
+  --type-label: var(--weight-semibold) var(--text-xs) / 1.2 var(--font-sans);
+  --type-numeric: var(--weight-medium) var(--text-md) / 1.2 var(--font-mono);
+  --type-numeric-lg: var(--weight-semibold) var(--text-xl) / 1.1 var(--font-mono);
+
+  /* spacing / layout */
+  --space-0: 0px;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 16px;
+  --space-8: 20px;
+  --space-9: 24px;
+  --space-10: 32px;
+  --space-11: 40px;
+  --space-12: 56px;
+  --space-13: 80px;
+
+  --control-h-sm: 28px;
+  --control-h-md: 34px;
+  --control-h-lg: 42px;
+
+  --rail-w: 248px;
+  --nav-h: 56px;
+  --subnav-h: 44px;
+  --page-max: 1600px;
+  --page-gutter: var(--space-9);
+  --grid-gap: var(--space-6);
+
+  /* radius — low and consistent: controls 5px, cards 8px, sheets 12px */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  --radius-control: var(--radius-sm);
+  --radius-card: var(--radius-md);
+  --radius-sheet: var(--radius-lg);
+  --radius-media: var(--radius-sm);
+
+  /* elevation */
+  --shadow-none: none;
+  --shadow-inset-hairline: inset 0 1px 0 oklch(1 0 0 / 0.04);
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.40);
+  --shadow-raised: 0 4px 16px oklch(0 0 0 / 0.45);
+  --shadow-overlay: 0 24px 64px oklch(0 0 0 / 0.60);
+  --ring-focus: 0 0 0 2px var(--bg-page), 0 0 0 4px var(--border-focus);
+  --ring-accent: 0 0 0 1px var(--accent);
+  --glow-accent: 0 0 0 1px var(--accent), 0 0 24px oklch(0.78 0.16 70 / 0.20);
+  --glow-live: 0 0 8px oklch(0.78 0.16 152 / 0.55);
+
+  /* motion — snappy, no bounce/spring/overshoot */
+  --dur-instant: 60ms;
+  --dur-fast: 110ms;
+  --dur-base: 160ms;
+  --dur-slow: 240ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-control:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+[data-theme="light"] {
+  --bg-page: oklch(0.985 0.004 70);
+  --bg-sunken: oklch(0.955 0.005 70);
+  --surface-1: oklch(1 0 0);
+  --surface-2: oklch(0.975 0.004 70);
+  --surface-3: oklch(0.945 0.005 70);
+  --surface-card: oklch(1 0 0);
+  --surface-overlay: oklch(1 0 0);
+  --surface-hover: oklch(0.955 0.005 70);
+  --surface-active: oklch(0.925 0.006 70);
+  --surface-inset: oklch(0.965 0.004 70);
+
+  --text-primary: oklch(0.17 0.008 70);
+  --text-body: oklch(0.24 0.008 70);
+  --text-secondary: oklch(0.45 0.010 70);
+  --text-tertiary: oklch(0.56 0.010 70);
+  --text-disabled: oklch(0.72 0.008 70);
+  --text-on-accent: oklch(0.16 0.030 70);
+  --text-link: oklch(0.55 0.150 70);
+  --text-link-hover: oklch(0.45 0.130 70);
+
+  --border-subtle: oklch(0.925 0.005 70);
+  --border-default: oklch(0.875 0.006 70);
+  --border-strong: oklch(0.78 0.008 70);
+
+  --accent: oklch(0.72 0.165 70);
+  --accent-hover: oklch(0.64 0.160 70);
+  --accent-quiet: oklch(0.94 0.045 70);
+  --accent-2: oklch(0.62 0.140 200);
+  --accent-2-quiet: oklch(0.94 0.040 200);
+
+  --price-up: oklch(0.55 0.150 152);
+  --price-up-bg: oklch(0.94 0.045 152);
+  --price-down: oklch(0.55 0.170 25);
+  --price-down-bg: oklch(0.95 0.040 25);
+
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.06);
+  --shadow-raised: 0 4px 16px oklch(0 0 0 / 0.10);
+  --shadow-overlay: 0 24px 64px oklch(0 0 0 / 0.16);
+
+  --scrim: oklch(0.30 0.010 70 / 0.40);
+}
+
+@keyframes sol-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@keyframes sol-flash-up {
+  0% { background-color: var(--price-up-bg); }
+  100% { background-color: transparent; }
+}
+@keyframes sol-flash-down {
+  0% { background-color: var(--price-down-bg); }
+  100% { background-color: transparent; }
+}
+@keyframes sol-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Opt-in utilities (source: tokens/base.css) — apply explicitly via className, not global. */
+.sol-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-mono);
+}
+.sol-label {
+  font: var(--type-label);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-tertiary);
+}

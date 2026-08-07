@@ -30,13 +30,15 @@ export function getSolanaChain(): `solana:${string}` {
   return cluster === "mainnet-beta" ? "solana:mainnet" : `solana:${cluster}`;
 }
 
-export function explorerAddressUrl(address: string): string {
+function explorerSuffix(): string {
   const cluster = getCluster();
-  const suffix =
-    cluster === "mainnet-beta"
-      ? ""
-      : cluster === "localnet"
-        ? "?cluster=custom"
-        : `?cluster=${cluster}`;
-  return `https://explorer.solana.com/address/${address}${suffix}`;
+  return cluster === "mainnet-beta" ? "" : cluster === "localnet" ? "?cluster=custom" : `?cluster=${cluster}`;
+}
+
+export function explorerAddressUrl(address: string): string {
+  return `https://explorer.solana.com/address/${address}${explorerSuffix()}`;
+}
+
+export function explorerTxUrl(signature: string): string {
+  return `https://explorer.solana.com/tx/${signature}${explorerSuffix()}`;
 }

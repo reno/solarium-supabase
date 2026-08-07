@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { Button } from "@/components/design";
 import { followProfile, unfollowProfile } from "@/lib/social/social";
 import { createClient } from "@/lib/supabase/client";
 
@@ -41,18 +42,15 @@ export function FollowButton({
   };
 
   return (
-    <button
+    <Button
       type="button"
+      variant={following ? "secondary" : "primary"}
+      icon={following ? "check" : "user-plus"}
       onClick={toggle}
       disabled={busy}
       aria-pressed={following}
-      className={
-        following
-          ? "rounded-full border border-zinc-300 px-4 py-1.5 text-sm transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          : "rounded-full bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-black dark:hover:bg-zinc-300"
-      }
     >
       {following ? "Following" : "Follow"}
-    </button>
+    </Button>
   );
 }

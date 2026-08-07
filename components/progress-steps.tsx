@@ -1,9 +1,11 @@
-import { Fragment } from "react";
+import { Icon } from "@/components/design";
 
 export type ProgressStepDef = { key: string; label: string };
 type MarkStatus = "done" | "current" | "pending" | "error";
-type SegmentStatus = "done" | "active" | "pending";
 
+// Vertical step list matching the design system's transaction-confirming pattern (see TxFlow
+// §3): token-styled marks — accent fill + check when done, a glowing accent ring with a spinner
+// while active, a red mark on failure, and a quiet placeholder for pending steps.
 export function ProgressSteps({
   steps,
   currentKey,
@@ -29,87 +31,76 @@ export function ProgressSteps({
           ? "error"
           : "current"
   );
-  const segmentStatuses: SegmentStatus[] = steps.map((_, index) =>
-    index < currentIndex
-      ? "done"
-      : index > currentIndex || status === "error"
-        ? "pending"
-        : "active"
-  );
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* Marks and connecting lines: each mark is a fixed-size circle so the
-          line touches it exactly, unaffected by label width. */}
-      <div className="flex items-center">
-        {steps.map((step, index) => (
-          <Fragment key={step.key}>
-            <StepMark status={markStatuses[index]} />
-            {index < steps.length - 1 && (
-              <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
-                {segmentStatuses[index] === "done" && (
-                  <div className="absolute inset-0 rounded-full bg-zinc-900 dark:bg-zinc-50" />
-                )}
-                {segmentStatuses[index] === "active" && (
-                  <div className="animate-progress-slide absolute inset-y-0 w-1/3 rounded-full bg-zinc-900 dark:bg-zinc-50" />
-                )}
-              </div>
-            )}
-          </Fragment>
-        ))}
-      </div>
-
-      {/* Labels: each sits in a slot matching its mark's width, but the text
-          itself is absolutely positioned and free to overflow that slot so
-          long labels don't widen the marks/lines row above. */}
-      <div className="flex items-start">
-        {steps.map((step, index) => {
-          const markStatus = markStatuses[index];
-          return (
-            <Fragment key={step.key}>
-              <div className="relative h-5 w-5 shrink-0">
-                <span
-                  className={`absolute top-0 left-1/2 w-20 -translate-x-1/2 text-center text-xs ${
-                    markStatus === "pending"
-                      ? "text-zinc-400 dark:text-zinc-600"
-                      : markStatus === "error"
-                        ? "font-medium text-red-600 dark:text-red-400"
-                        : "font-medium text-zinc-900 dark:text-zinc-50"
-                  }`}
-                >
-                  {step.label}
-                </span>
-              </div>
-              {index < steps.length - 1 && <div className="flex-1" />}
-            </Fragment>
-          );
-        })}
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)" }}>
+      {steps.map((step, index) => {
+        const markStatus = markStatuses[index];
+        const active = markStatus === "done" || markStatus === "current";
+        return (
+          <div key={step.key} style={{ display: "flex", alignItems: "center", gap: "var(--space-5)" }}>
+            <StepMark status={markStatus} />
+            <span
+              style={{
+                fontSize: "var(--text-sm)",
+                color:
+                  markStatus === "error"
+                    ? "var(--price-down)"
+                    : active
+                      ? "var(--text-primary)"
+                      : "var(--text-tertiary)",
+                fontWeight: markStatus === "error" ? "var(--weight-semibold)" : undefined,
+              }}
+            >
+              {step.label}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
+const MARK: React.CSSProperties = {
+  width: 18,
+  height: 18,
+  flex: "0 0 auto",
+  borderRadius: 999,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
 function StepMark({ status }: { status: MarkStatus }) {
   if (status === "done") {
     return (
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-[10px] text-white dark:bg-zinc-50 dark:text-black">
-        ✓
+      <span style={{ ...MARK, background: "var(--accent)" }}>
+        <Icon name="check" size={11} color="var(--text-on-accent)" />
       </span>
     );
   }
   if (status === "current") {
     return (
-      <span className="h-5 w-5 shrink-0 rounded-full bg-zinc-900 dark:bg-zinc-50" />
+      <span
+        style={{
+          ...MARK,
+          background: "var(--accent-quiet)",
+          border: "1px solid var(--accent)",
+          boxShadow: "var(--glow-live)",
+        }}
+      >
+        <Icon name="loader-circle" size={11} color="var(--accent)" className="sol-spin" />
+      </span>
     );
   }
   if (status === "error") {
     return (
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white">
-        !
+      <span style={{ ...MARK, background: "var(--price-down)" }}>
+        <Icon name="x" size={11} color="var(--text-on-accent)" />
       </span>
     );
   }
   return (
-    <span className="h-5 w-5 shrink-0 rounded-full border-2 border-zinc-300 dark:border-zinc-700" />
+    <span style={{ ...MARK, background: "var(--surface-3)", border: "1px solid var(--border-subtle)" }} />
   );
 }

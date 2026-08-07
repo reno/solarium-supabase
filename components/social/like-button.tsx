@@ -2,8 +2,30 @@
 
 import { useMemo, useState } from "react";
 
+import { Icon } from "@/components/design";
 import { likeNft, unlikeNft } from "@/lib/social/social";
 import { createClient } from "@/lib/supabase/client";
+
+const CHIP: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "var(--space-4)",
+  height: "var(--control-h-md)",
+  padding: "0 var(--space-6)",
+  borderRadius: "var(--radius-pill)",
+  border: "1px solid var(--border-default)",
+  background: "var(--surface-2)",
+  fontFamily: "var(--font-sans)",
+  fontSize: "var(--text-md)",
+  fontWeight: "var(--weight-semibold)",
+  color: "var(--text-body)",
+};
+
+const COUNT: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontVariantNumeric: "tabular-nums",
+  fontSize: "var(--text-xs)",
+};
 
 export function LikeButton({
   nftId,
@@ -23,12 +45,9 @@ export function LikeButton({
 
   if (!viewerId) {
     return (
-      <span
-        title="Sign in to like"
-        className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400"
-      >
-        <span aria-hidden>❤</span>
-        {count}
+      <span title="Sign in to like" style={{ ...CHIP, color: "var(--text-tertiary)", cursor: "default" }}>
+        <Icon name="heart" size={15} />
+        <span style={COUNT}>{count}</span>
       </span>
     );
   }
@@ -59,12 +78,17 @@ export function LikeButton({
       onClick={toggle}
       disabled={busy}
       aria-pressed={liked}
-      className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1 text-sm transition-colors hover:border-zinc-300 disabled:opacity-50 dark:border-zinc-800 dark:hover:border-zinc-700"
+      style={{
+        ...CHIP,
+        cursor: busy ? "default" : "pointer",
+        opacity: busy ? 0.6 : 1,
+        color: liked ? "var(--price-down)" : "var(--text-body)",
+        borderColor: liked ? "var(--price-down)" : "var(--border-default)",
+        transition: "var(--transition-control)",
+      }}
     >
-      <span aria-hidden className={liked ? "text-red-500" : "text-zinc-500 dark:text-zinc-400"}>
-        ❤
-      </span>
-      {count}
+      <Icon name="heart" size={15} />
+      <span style={COUNT}>{count}</span>
     </button>
   );
 }

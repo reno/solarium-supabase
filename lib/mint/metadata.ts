@@ -1,9 +1,11 @@
-export function editionName(
+// A generative collection is a supply of unique items. Multi-item drops number each item
+// ("Name #3"); a standalone 1/1 keeps its base name. There is no "of N" — items aren't editions.
+export function itemName(
   baseName: string,
-  edition: number,
-  total: number
+  number: number,
+  supply: number
 ): string {
-  return total > 1 ? `${baseName} #${edition}/${total}` : baseName;
+  return supply > 1 ? `${baseName} #${number}` : baseName;
 }
 
 // Metaplex JSON metadata standard (the subset that matters for images).
