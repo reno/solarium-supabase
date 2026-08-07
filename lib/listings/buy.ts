@@ -11,7 +11,6 @@ async function invokeSettle(
 ): Promise<Record<string, string>> {
   const { data, error } = await supabase.functions.invoke("settle", { body });
   if (error) {
-    // Surface the function's own error message instead of a generic status.
     if (error instanceof FunctionsHttpError) {
       const details = await error.context
         .json()
@@ -25,10 +24,6 @@ async function invokeSettle(
 
 export type BuyStage = "preparing" | "signing" | "sending" | "confirming" | "recording";
 
-// Buys a listing: the settle edge function verifies on-chain state and returns
-// an atomic transfer+payment transaction pre-signed by the settlement
-// authority; the buyer's wallet signs it here, sends it, and settlement is
-// recorded only after the function re-verifies the confirmed signature.
 export async function buyListing({
   supabase,
   umi,

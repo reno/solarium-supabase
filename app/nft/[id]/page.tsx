@@ -1,25 +1,33 @@
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
+import { FloorChartCard } from "@/components/charts/floor-chart-card";
+import { ActivityRow, AddressChip, ArtTile, Badge, Card, DepthChart, PriceDisplay, RarityBadge, RarityDistribution } from "@/components/design";
+import { Countdown } from "@/components/launchpad/countdown";
+import { TabPanels } from "@/components/tab-panels";
+import { activeListing as findActiveListing, isUnrevealed } from "@/lib/listings/active";
+import { orderBook, rarityBuckets } from "@/lib/viz/item-viz";
 import { BuyButton } from "@/components/listings/buy-button";
 import { OwnedNftControls } from "@/components/listings/my-nft-card";
-import { CommentsSection, type CommentEntry } from "@/components/social/comments-section";
-import {
-  CommentsToggleButton,
-  CommentsVisibilityGate,
-  CommentsVisibilityProvider,
-} from "@/components/social/comments-visibility";
-import { LikeButton } from "@/components/social/like-button";
-import { explorerAddressUrl } from "@/lib/solana/config";
+import { BidButton } from "@/components/offers/bid-button";
+import { OffersList } from "@/components/offers/offers-list";
+import { mapCollectionOffers, mapOffers, type RawCollectionOffer } from "@/lib/offers/map";
+import { getSolUsd } from "@/lib/price/sol";
+import { toFeedItem, type RawActivity } from "@/lib/activities/feed";
+import { serverNow } from "@/lib/format/relative-time";
+import { shortWallet } from "@/lib/format/wallet";
+import { explorerAddressUrl, getCluster } from "@/lib/solana/config";
 import { lamportsToSol } from "@/lib/solana/lamports";
 import { createClient } from "@/lib/supabase/server";
 
-function shortWallet(address: string | null | undefined): string {
-  if (!address) return "unknown";
-  return `${address.slice(0, 4)}…${address.slice(-4)}`;
-}
+const LABEL: React.CSSProperties = {
+  font: "var(--type-label)",
+  fontSize: "var(--text-2xs)",
+  textTransform: "uppercase",
+  letterSpacing: "var(--tracking-label)",
+  color: "var(--text-tertiary)",
+};
 
 export default async function NftDetailPage({
   params,
@@ -35,177 +43,210 @@ export default async function NftDetailPage({
   const { data: row } = await supabase
     .from("nfts")
     .select(
-      "id, name, description, image_url, asset_address, edition_number, edition_total, collection_id, owner_id, collections(name, collection_address), creator:profiles!nfts_creator_id_fkey(username, wallet_address), owner:profiles!nfts_owner_id_fkey(username, wallet_address), listings(id, price_lamports, status, seller_id)"
+      "id, name, description, image_url, asset_address, edition_number, collection_id, owner_id, rarity_rank, rarity_total, traits, collections(name, collection_address, royalty_bps, reveal_at, creator_id), creator:profiles!nfts_creator_id_fkey(username, wallet_address), owner:profiles!nfts_owner_id_fkey(username, wallet_address), listings(id, price_lamports, status, seller_id, expires_at)"
     )
     .eq("id", id)
     .maybeSingle();
 
   if (!row) notFound();
 
-  const collection = Array.isArray(row.collections)
-    ? row.collections[0]
-    : row.collections;
+  const collection = Array.isArray(row.collections) ? row.collections[0] : row.collections;
   const creator = Array.isArray(row.creator) ? row.creator[0] : row.creator;
   const owner = Array.isArray(row.owner) ? row.owner[0] : row.owner;
-  const activeListing = (row.listings ?? []).find(
-    (listing: { status: string }) => listing.status === "active"
-  );
+  const activeListing = findActiveListing(row.listings ?? []);
+  const unrevealed = isUnrevealed(collection?.reveal_at);
+  const now = serverNow();
 
   const isOwner = user?.id === row.owner_id;
-  const priceSol = activeListing
-    ? lamportsToSol(BigInt(String(activeListing.price_lamports)))
+  const priceLamports = activeListing ? BigInt(String(activeListing.price_lamports)) : 0n;
+  const priceSol = activeListing ? lamportsToSol(priceLamports) : null;
+  const royaltyBps = collection?.royalty_bps ?? 0;
+  const viewerIsCreator = !!user && collection?.creator_id === user.id;
+  const chargedRoyaltyBps = viewerIsCreator ? 0 : royaltyBps;
+  const FEE_BPS = 200;
+  const buyerTotalSol = activeListing
+    ? lamportsToSol(priceLamports + (priceLamports * BigInt(chargedRoyaltyBps)) / 10000n + (priceLamports * BigInt(FEE_BPS)) / 10000n)
     : null;
 
-  const [likeCountResult, viewerLikeResult, commentsResult, viewerProfileResult] =
-    await Promise.all([
+  const [
+    offersResult,
+    activitiesResult,
+    collListingsResult,
+    collOffersResult,
+    collLevelOffersResult,
+  ] = await Promise.all([
       supabase
-        .from("nft_like_counts")
-        .select("like_count")
+        .from("offers")
+        .select("id, bidder_id, price_lamports, expires_at, status, accepted_tx, nft:nfts(owner_id, listings(status)), bidder:profiles!offers_bidder_id_fkey(username, wallet_address)")
         .eq("nft_id", id)
-        .maybeSingle(),
-      user
-        ? supabase
-            .from("likes")
-            .select("nft_id")
-            .eq("nft_id", id)
-            .eq("profile_id", user.id)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
+        .in("status", ["active", "accepted"])
+        .order("price_lamports", { ascending: false }),
       supabase
-        .from("comments")
+        .from("activities")
         .select(
-          "id, body, created_at, profile_id, profiles!comments_profile_id_fkey(username, wallet_address)"
+          "id, type, lamports, created_at, actor:profiles!activities_actor_id_fkey(username, wallet_address), counterparty:profiles!activities_counterparty_id_fkey(username, wallet_address)"
         )
         .eq("nft_id", id)
-        .order("created_at", { ascending: false }),
-      user
-        ? supabase
-            .from("profiles")
-            .select("username, wallet_address")
-            .eq("id", user.id)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
+        .order("created_at", { ascending: false })
+        .limit(20),
+      row.collection_id
+        ? supabase.from("listings").select("price_lamports, nfts!inner(collection_id)").eq("status", "active").eq("nfts.collection_id", row.collection_id)
+        : Promise.resolve({ data: [] }),
+      row.collection_id
+        ? supabase.from("offers").select("price_lamports, nfts!inner(collection_id)").eq("status", "active").eq("nfts.collection_id", row.collection_id)
+        : Promise.resolve({ data: [] }),
+      row.collection_id
+        ? supabase.from("offers").select("id, bidder_id, price_lamports, quantity, expires_at, status, bidder:profiles!offers_bidder_id_fkey(username, wallet_address)").eq("collection_id", row.collection_id).eq("status", "active").order("price_lamports", { ascending: false })
+        : Promise.resolve({ data: [] }),
     ]);
 
-  const likeCount = likeCountResult.data?.like_count ?? 0;
-  const viewerHasLiked = Boolean(viewerLikeResult.data);
-  const comments: CommentEntry[] = (commentsResult.data ?? []).map((c) => {
-    const author = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles;
-    return {
-      id: c.id,
-      body: c.body,
-      createdAt: c.created_at,
-      authorId: c.profile_id,
-      authorName: author?.username ?? shortWallet(author?.wallet_address),
-      authorUsername: author?.username ?? null,
-    };
-  });
-  const viewerProfile = viewerProfileResult.data;
-  const viewerName = viewerProfile
-    ? viewerProfile.username ?? shortWallet(viewerProfile.wallet_address)
-    : undefined;
-  const viewerUsername = viewerProfile?.username ?? null;
+  const activities = (activitiesResult.data ?? []) as unknown as RawActivity[];
+  const feed = activities.map((a) => toFeedItem(a, row.name, unrevealed ? null : row.image_url));
+
+  const priceSeries = activities
+    .filter((a) => (a.type === "list" || a.type === "sale") && a.lamports != null)
+    .map((a) => ({ t: new Date(a.created_at).getTime(), v: Number(a.lamports) / 1e9 }))
+    .sort((a, b) => a.t - b.t)
+    .map((p) => p.v);
+  const showHistory = new Set(priceSeries).size >= 2;
+
+  const itemOffers = mapOffers(offersResult.data ?? []);
+  const collectionOfferEntries = mapCollectionOffers((collLevelOffersResult.data ?? []) as unknown as RawCollectionOffer[]);
+  const offers = [...collectionOfferEntries, ...itemOffers];
+  const topBidSol = offers.find((o) => o.status === "active")?.priceSol;
+  const lastSaleActivity = activities.find((a) => a.type === "sale" && a.lamports != null);
+  const lastSaleSol = lastSaleActivity ? lamportsToSol(BigInt(String(lastSaleActivity.lamports))) : null;
+
+  const traits: { trait: string; value: string }[] = Array.isArray(row.traits) ? row.traits : [];
+
+  const toSol = (p: string | number) => Number(lamportsToSol(BigInt(String(p))));
+  const askPrices = row.collection_id
+    ? ((collListingsResult.data ?? []) as { price_lamports: string | number }[]).map((l) => toSol(l.price_lamports))
+    : activeListing
+      ? [toSol(activeListing.price_lamports)]
+      : [];
+  const bidPrices = row.collection_id
+    ? ((collOffersResult.data ?? []) as { price_lamports: string | number }[]).map((o) => toSol(o.price_lamports))
+    : offers.filter((o) => o.status === "active").map((o) => parseFloat(o.priceSol));
+  const depth = orderBook(askPrices, bidPrices);
+  const collectionFloorSol = askPrices.length ? String(Math.min(...askPrices)) : null;
+  const solUsd = await getSolUsd();
+  const rarity = rarityBuckets(row.id, row.rarity_rank, row.rarity_total ?? 8192);
+
+  const details: Array<[string, React.ReactNode]> = [
+    [
+      "Creator",
+      creator?.username ? (
+        <Link href={`/u/${creator.username}`} style={{ color: "var(--text-link)" }}>
+          @{creator.username}
+        </Link>
+      ) : (
+        shortWallet(creator?.wallet_address)
+      ),
+    ],
+    [
+      "Asset",
+      <a
+        key="asset"
+        href={explorerAddressUrl(row.asset_address)}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: "var(--text-link)" }}
+      >
+        {shortWallet(row.asset_address)}
+      </a>,
+    ],
+    ["Token standard", "Metaplex Core"],
+    ["Chain", `Solana · ${getCluster()}`],
+    ...(collection ? ([["Creator royalty", `${(royaltyBps / 100).toFixed(1)}%`]] as Array<[string, React.ReactNode]>) : []),
+    ...(row.edition_number != null ? ([["Item number", `#${row.edition_number}`]] as Array<[string, React.ReactNode]>) : []),
+  ];
 
   return (
-    <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-16">
-      <CommentsVisibilityProvider initialCount={comments.length}>
-        <div className="mb-6">
-          <BackLink />
-        </div>
-        <div className="grid gap-10 md:grid-cols-2">
-          <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
-            <Image
-              src={row.image_url}
-              alt={row.name}
-              fill
-              sizes="(min-width: 768px) 50vw, 100vw"
-              className="object-contain"
-              unoptimized
-            />
+    <main style={{ maxWidth: "var(--page-max)", margin: "0 auto", width: "100%", flex: 1, padding: "var(--space-8) var(--page-gutter) var(--space-13)" }}>
+      <div style={{ marginBottom: "var(--space-8)" }}>
+        <BackLink label={collection?.name ?? "Back"} />
+      </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(340px, 1fr) 1.2fr", gap: "var(--space-10)", alignItems: "start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>
+            <ArtTile src={unrevealed ? undefined : row.image_url} label={unrevealed ? "unrevealed" : row.name} radius="var(--radius-card)">
+              {unrevealed && collection?.reveal_at ? (
+                <div style={{ position: "absolute", bottom: "var(--space-6)", left: 0, right: 0, textAlign: "center", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-secondary)" }}>
+                  reveal in <Countdown target={collection.reveal_at} now={now} style={{ color: "var(--accent)" }} />
+                </div>
+              ) : null}
+            </ArtTile>
+            {collection && (
+              <Card padding="var(--space-7)">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-6)" }}>
+                  <span style={LABEL}>Rarity</span>
+                  <RarityBadge rank={row.rarity_rank ?? "—"} total={row.rarity_total ?? undefined} />
+                </div>
+                <RarityDistribution buckets={rarity.buckets} highlight={rarity.highlight} height={72} />
+              </Card>
+            )}
           </div>
-          <div className="flex flex-col gap-6">
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-7)" }}>
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight">
+              {collection && (
+                <Link href={`/series/${row.collection_id}`} style={{ fontSize: "var(--text-md)", color: "var(--text-secondary)" }}>
+                  {collection.name}
+                </Link>
+              )}
+              <h1 style={{ font: "var(--type-h1)", letterSpacing: "var(--tracking-heading)", color: "var(--text-primary)", margin: "4px 0 0" }}>
                 {row.name}
               </h1>
-              {collection && (
-                <p className="mt-1 text-sm text-zinc-500">
-                  Part of{" "}
-                  <Link
-                    href={`/series/${row.collection_id}`}
-                    className="underline-offset-4 hover:underline"
-                  >
-                    {collection.name}
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-5)", marginTop: "var(--space-6)" }}>
+                <span style={{ fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>Owner</span>
+                {owner?.username ? (
+                  <Link href={`/u/${owner.username}`} style={{ textDecoration: "none" }}>
+                    <AddressChip address={owner.wallet_address ?? "unknown"} ens={owner.username} style={{ cursor: "pointer" }} />
                   </Link>
-                  {row.edition_total ? ` · #${row.edition_number}/${row.edition_total}` : ""}
-                </p>
-              )}
+                ) : (
+                  <AddressChip address={owner?.wallet_address ?? "unknown"} />
+                )}
+              </div>
             </div>
 
-            {row.description && (
-              <p className="text-zinc-600 dark:text-zinc-400">
-                {row.description}
-              </p>
-            )}
-
-            <dl className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <dt className="text-zinc-500">Creator</dt>
-                <dd>
-                  {creator?.username ? (
-                    <Link
-                      href={`/u/${creator.username}`}
-                      className="underline-offset-4 hover:underline"
-                    >
-                      @{creator.username}
-                    </Link>
-                  ) : (
-                    shortWallet(creator?.wallet_address)
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-zinc-500">Owner</dt>
-                <dd>
-                  {owner?.username ? (
-                    <Link
-                      href={`/u/${owner.username}`}
-                      className="underline-offset-4 hover:underline"
-                    >
-                      @{owner.username}
-                    </Link>
-                  ) : (
-                    shortWallet(owner?.wallet_address)
-                  )}
-                </dd>
-              </div>
-              <div className="col-span-2">
-                <dt className="text-zinc-500">Asset</dt>
-                <dd>
-                  <a
-                    className="font-mono text-xs underline-offset-4 hover:underline"
-                    href={explorerAddressUrl(row.asset_address)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {row.asset_address}
-                  </a>
-                </dd>
-              </div>
-            </dl>
-
-            <div className="border-t border-zinc-200 pt-6 dark:border-zinc-800">
-              {!isOwner && activeListing && (
-                <p className="mb-3 text-xl font-medium">{priceSol} SOL</p>
+            <Card padding="var(--space-8)">
+              {priceSol ? (
+                <div style={{ display: "flex", alignItems: "flex-end", gap: "var(--space-7)" }}>
+                  <PriceDisplay label="Listed for" amount={priceSol} size="lg" />
+                  {activeListing?.expires_at ? (
+                    <Badge tone="live" dot style={{ marginBottom: 4 }}>
+                      Ends in <Countdown target={activeListing.expires_at} now={now} style={{ marginLeft: 4 }} />
+                    </Badge>
+                  ) : null}
+                </div>
+              ) : (
+                <span style={LABEL}>Not for sale</span>
               )}
-              <div className="flex flex-wrap items-center gap-3">
-                <LikeButton
-                  nftId={row.id}
-                  viewerId={user?.id ?? null}
-                  initialCount={Number(likeCount)}
-                  initialLiked={viewerHasLiked}
-                />
-                <CommentsToggleButton />
+              {buyerTotalSol ? (
+                <div style={{ marginTop: "var(--space-4)", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>
+                  + 2.0% fee
+                  {chargedRoyaltyBps > 0
+                    ? ` + ${(chargedRoyaltyBps / 100).toFixed(1)}% royalty`
+                    : viewerIsCreator
+                      ? " · no royalty on your own collection"
+                      : ""}{" "}
+                  · you pay {buyerTotalSol} SOL
+                </div>
+              ) : null}
+              {(topBidSol || lastSaleSol) && (
+                <div style={{ display: "flex", gap: "var(--space-9)", marginTop: "var(--space-7)", paddingTop: "var(--space-6)", borderTop: "1px solid var(--border-subtle)" }}>
+                  <div>
+                    <div style={LABEL}>Top bid</div>
+                    <div className="sol-num" style={{ fontSize: "var(--text-md)", color: "var(--text-primary)", marginTop: 2 }}>{topBidSol ? `${topBidSol} SOL` : "—"}</div>
+                  </div>
+                  <div>
+                    <div style={LABEL}>Last sale</div>
+                    <div className="sol-num" style={{ fontSize: "var(--text-md)", color: "var(--text-primary)", marginTop: 2 }}>{lastSaleSol ? `${lastSaleSol} SOL` : "—"}</div>
+                  </div>
+                </div>
+              )}
+              <div style={{ marginTop: "var(--space-7)" }}>
                 {isOwner ? (
                   <OwnedNftControls
                     nft={{
@@ -213,49 +254,130 @@ export default async function NftDetailPage({
                       name: row.name,
                       imageUrl: row.image_url,
                       assetAddress: row.asset_address,
-                      editionNumber: row.edition_number,
-                      editionTotal: row.edition_total,
                       collectionId: row.collection_id,
                       collectionAddress: collection?.collection_address ?? null,
                       listing: activeListing
-                        ? {
-                            id: activeListing.id,
-                            priceLamports: String(activeListing.price_lamports),
-                          }
+                        ? { id: activeListing.id, priceLamports: String(activeListing.price_lamports) }
                         : null,
                     }}
                     userId={user!.id}
-                  />
-                ) : activeListing ? (
-                  <BuyButton
-                    listingId={activeListing.id}
-                    sellerId={String(activeListing.seller_id)}
-                    priceSol={priceSol!}
-                    viewerId={user?.id ?? null}
+                    floorSol={collectionFloorSol}
+                    topBidSol={topBidSol ?? null}
+                    royaltyBps={royaltyBps}
                   />
                 ) : (
-                  <p className="text-sm text-zinc-500">Not for sale.</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: "var(--space-5)" }}>
+                    {activeListing ? (
+                      <BuyButton
+                        listingId={activeListing.id}
+                        sellerId={String(activeListing.seller_id)}
+                        priceSol={priceSol!}
+                        viewerId={user?.id ?? null}
+                        itemName={row.name}
+                        collectionName={collection?.name}
+                        royaltyBps={chargedRoyaltyBps}
+                        solUsd={solUsd}
+                      />
+                    ) : (
+                      <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>Not listed.</p>
+                    )}
+                    <BidButton
+                      nftId={row.id}
+                      itemName={row.name}
+                      collectionName={collection?.name}
+                      viewerId={user?.id ?? null}
+                      isOwner={isOwner}
+                      floorSol={priceSol ?? undefined}
+                      topBidSol={topBidSol}
+                    />
+                  </div>
                 )}
               </div>
-            </div>
+            </Card>
+
+            {row.description && (
+              <p style={{ font: "var(--type-body)", color: "var(--text-secondary)", margin: 0, textWrap: "pretty" }}>{row.description}</p>
+            )}
           </div>
         </div>
 
-        <CommentsVisibilityGate>
-          <div className="mt-16 border-t border-zinc-200 pt-10 dark:border-zinc-800">
-            <h2 className="mb-6 text-lg font-semibold tracking-tight">
-              Comments
-            </h2>
-            <CommentsSection
-              nftId={row.id}
-              viewerId={user?.id ?? null}
-              viewerName={viewerName}
-              viewerUsername={viewerUsername}
-              initialComments={comments}
-            />
-          </div>
-        </CommentsVisibilityGate>
-      </CommentsVisibilityProvider>
+        <div style={{ marginTop: "var(--space-11)" }}>
+          <TabPanels
+            tabs={[
+              { value: "traits", label: "Traits" },
+              { value: "offers", label: "Offers" },
+              { value: "activity", label: "Activity" },
+              { value: "details", label: "Details" },
+            ]}
+            counts={{ traits: traits.length, offers: offers.length, activity: feed.length }}
+            panels={{
+              traits:
+                traits.length > 0 ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "var(--space-5)" }}>
+                    {traits.map((t) => (
+                      <div key={t.trait} style={{ background: "var(--surface-card)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-card)", padding: "var(--space-6)" }}>
+                        <div style={{ font: "var(--type-label)", fontSize: "var(--text-2xs)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)", color: "var(--text-tertiary)" }}>{t.trait}</div>
+                        <div style={{ fontSize: "var(--text-base)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)", marginTop: 3 }}>{t.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>No traits recorded for this item.</p>
+                ),
+              offers:
+                offers.length > 0 ? (
+                  <Card padding={0}>
+                    <OffersList offers={offers} viewerId={user?.id ?? null} isOwner={isOwner} listPriceSol={priceSol} nftId={row.id} />
+                  </Card>
+                ) : (
+                  <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>No active offers.</p>
+                ),
+              activity: (
+                <div style={{ display: "grid", gridTemplateColumns: showHistory ? "1fr 1.4fr" : "1fr", gap: "var(--space-6)", alignItems: "start" }}>
+                  {showHistory && (
+                    <Card padding="var(--space-7)">
+                      <FloorChartCard data={priceSeries} height={160} />
+                    </Card>
+                  )}
+                  {feed.length > 0 ? (
+                    <Card padding={0}>
+                      {feed.map((f, i) => (
+                        <ActivityRow key={f.id} {...f} style={i === feed.length - 1 ? { borderBottom: "none" } : undefined} />
+                      ))}
+                    </Card>
+                  ) : (
+                    <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>No activity yet.</p>
+                  )}
+                </div>
+              ),
+              details: (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-6)", alignItems: "start" }}>
+                  <Card padding="var(--space-7)">
+                    {details.map(([k, v], i) => (
+                      <div
+                        key={k}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "var(--space-6)",
+                          padding: "var(--space-4) 0",
+                          borderBottom: i === details.length - 1 ? "none" : "1px solid var(--border-subtle)",
+                        }}
+                      >
+                        <span style={{ fontSize: "var(--text-md)", color: "var(--text-secondary)" }}>{k}</span>
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: "var(--text-primary)", textAlign: "right" }}>{v}</span>
+                      </div>
+                    ))}
+                  </Card>
+                  <Card padding="var(--space-7)">
+                    <div style={{ ...LABEL, marginBottom: "var(--space-6)" }}>Order book</div>
+                    <DepthChart bids={depth.bids} asks={depth.asks} height={132} />
+                  </Card>
+                </div>
+              ),
+            }}
+          />
+        </div>
     </main>
   );
 }

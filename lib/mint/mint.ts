@@ -9,10 +9,11 @@ import {
 import { base58 } from "@metaplex-foundation/umi/serializers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { buildNftMetadata, editionName } from "@/lib/mint/metadata";
+import { buildNftMetadata, itemName } from "@/lib/mint/metadata";
+import { packIntoTransactions } from "@/lib/solana/pack";
 import { withRpcRetry } from "@/lib/solana/retry";
 
-export const MAX_EDITIONS = 30;
+export const MAX_SUPPLY = 30;
 
 export type MintStage = "uploading" | "signing" | "sending" | "recording";
 
@@ -31,37 +32,12 @@ export type MintParams = {
 export type MintResult = {
   assetAddresses: string[];
   collectionAddress: string | null;
+  collectionId: string | null;
   signatures: string[];
 };
 
-type TxChunk = {
-  builder: TransactionBuilder;
-  assetIndices: number[];
-};
-
-function packIntoTransactions(
-  umi: Umi,
-  items: { builder: TransactionBuilder; assetIndex: number | null }[]
-): TxChunk[] {
-  const chunks: TxChunk[] = [];
-  for (const item of items) {
-    const indices = item.assetIndex === null ? [] : [item.assetIndex];
-    const last = chunks[chunks.length - 1];
-    if (last) {
-      const merged = last.builder.add(item.builder);
-      if (merged.fitsInOneTransaction(umi)) {
-        last.builder = merged;
-        last.assetIndices.push(...indices);
-        continue;
-      }
-    }
-    chunks.push({ builder: item.builder, assetIndices: indices });
-  }
-  return chunks;
-}
-
-// Wallet first: if the wallet modifies the transaction while signing (some
-// wallets do), keypair signatures applied afterwards remain valid.
+// Wallet signs first, or later keypair signatures break: some wallets modify the
+// transaction while signing, invalidating signatures applied before them.
 function identityFirst(signers: Signer[], umi: Umi): Signer[] {
   return [...signers].sort((a, b) => {
     if (a.publicKey === umi.identity.publicKey) return -1;
@@ -81,8 +57,8 @@ export async function mintNfts({
   quantity,
   onStage,
 }: MintParams): Promise<MintResult> {
-  if (quantity < 1 || quantity > MAX_EDITIONS) {
-    throw new Error(`Quantity must be between 1 and ${MAX_EDITIONS}.`);
+  if (quantity < 1 || quantity > MAX_SUPPLY) {
+    throw new Error(`Quantity must be between 1 and ${MAX_SUPPLY}.`);
   }
 
   onStage?.("uploading");
@@ -123,8 +99,7 @@ export async function mintNfts({
   );
   const collectionSigner = quantity > 1 ? generateSigner(umi) : null;
 
-  const items: { builder: TransactionBuilder; assetIndex: number | null }[] =
-    [];
+  const items: { builder: TransactionBuilder; keys: number[] }[] = [];
   if (collectionSigner) {
     items.push({
       builder: createCollection(umi, {
@@ -132,14 +107,14 @@ export async function mintNfts({
         name,
         uri: metadataUrl,
       }),
-      assetIndex: null,
+      keys: [],
     });
   }
   assetSigners.forEach((asset, index) => {
     items.push({
       builder: create(umi, {
         asset,
-        name: editionName(name, index + 1, quantity),
+        name: itemName(name, index + 1, quantity),
         uri: metadataUrl,
         ...(collectionSigner
           ? {
@@ -151,15 +126,11 @@ export async function mintNfts({
             }
           : {}),
       }),
-      assetIndex: index,
+      keys: [index],
     });
   });
   const chunks = packIntoTransactions(umi, items);
 
-  // Later chunks reference the collection created by an earlier one, so each
-  // is given a fresh blockhash and sent one at a time (not batched) so a
-  // dependent chunk isn't built against a collection that hasn't landed yet.
-  // Track what lands so partial failures still get recorded.
   const signatures: string[] = [];
   const confirmedAssetIndices: number[] = [];
   const assetMintTx: Record<number, string> = {};
@@ -184,22 +155,19 @@ export async function mintNfts({
       const signatureBytes = await withRpcRetry(() =>
         umi.rpc.sendTransaction(signed)
       );
-      // Only a chunk with a later chunk depending on it (i.e. the collection
-      // creation, when there's more than one chunk) needs to wait for
-      // "finalized" visibility — that wait eats into the blockhash's ~60-90s
-      // validity window, so the common single-chunk case (and the last chunk
-      // of any mint) uses "confirmed" instead to avoid expiring the signature.
       const hasDependentChunk = chunkIndex < chunks.length - 1;
       await withRpcRetry(() =>
         umi.rpc.confirmTransaction(signatureBytes, {
           strategy: { type: "blockhash", ...blockhash },
+          // Only a chunk something else depends on waits for "finalized" — that wait eats
+          // into the blockhash's ~60-90s window, so the last chunk uses "confirmed".
           commitment: hasDependentChunk ? "finalized" : "confirmed",
         })
       );
       const signature = base58.deserialize(signatureBytes)[0];
       signatures.push(signature);
       if (chunkIndex === 0) collectionConfirmed = true;
-      for (const assetIndex of chunk.assetIndices) {
+      for (const assetIndex of chunk.keys) {
         confirmedAssetIndices.push(assetIndex);
         assetMintTx[assetIndex] = signature;
       }
@@ -210,9 +178,9 @@ export async function mintNfts({
   }
 
   const assetAddresses: string[] = [];
+  let collectionId: string | null = null;
   if (confirmedAssetIndices.length > 0 || (collectionSigner && collectionConfirmed)) {
     onStage?.("recording");
-    let collectionId: string | null = null;
     if (collectionSigner && collectionConfirmed) {
       const { data: collectionRow, error: collectionInsertError } =
         await supabase
@@ -242,12 +210,11 @@ export async function mintNfts({
         creator_id: creatorId,
         owner_id: creatorId,
         owner_wallet: ownerWallet,
-        name: editionName(name, index + 1, quantity),
+        name: itemName(name, index + 1, quantity),
         description,
         image_url: imageUrl,
         metadata_url: metadataUrl,
         edition_number: quantity > 1 ? index + 1 : null,
-        edition_total: quantity > 1 ? quantity : null,
         mint_tx: assetMintTx[index],
       }));
       const { data: nftRows, error: nftInsertError } = await supabase
@@ -266,6 +233,14 @@ export async function mintNfts({
           actor_id: creatorId,
         }))
       );
+      if (collectionId) {
+        const [stats, rarity] = await Promise.all([
+          supabase.rpc("refresh_collection_stats", { p_collection: collectionId }),
+          supabase.rpc("recompute_collection_rarity", { p_collection: collectionId }),
+        ]);
+        if (stats.error) console.warn(`Collection stats not refreshed: ${stats.error.message}`);
+        if (rarity.error) console.warn(`Collection rarity not recomputed: ${rarity.error.message}`);
+      }
       assetAddresses.push(
         ...confirmedAssetIndices.map((index) => assetSigners[index].publicKey)
       );
@@ -274,13 +249,14 @@ export async function mintNfts({
 
   if (sendError) {
     throw new Error(
-      `Minted ${confirmedAssetIndices.length} of ${quantity} editions before a transaction failed: ${sendError.message}`
+      `Minted ${confirmedAssetIndices.length} of ${quantity} items before a transaction failed: ${sendError.message}`
     );
   }
 
   return {
     assetAddresses,
     collectionAddress: collectionSigner ? collectionSigner.publicKey : null,
+    collectionId,
     signatures,
   };
 }

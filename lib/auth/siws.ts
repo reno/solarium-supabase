@@ -38,9 +38,6 @@ export async function signInWithSolanaAccount(
   });
   if (error) throw error;
 
-  // The signup trigger normally creates the profile row, but only on first
-  // sign-in — recreate it if it has gone missing, then backfill the wallet
-  // address on rows that predate it.
   await supabase
     .from("profiles")
     .upsert(

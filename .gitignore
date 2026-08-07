@@ -53,3 +53,8 @@ supabase/.branches/
 .claude/
 AGENTS.md
 CLAUDE.md
+
+docs/
+
+# vscode
+.vscode/

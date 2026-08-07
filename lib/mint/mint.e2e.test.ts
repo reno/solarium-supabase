@@ -1,10 +1,3 @@
-// End-to-end mint test against devnet + local supabase. Opt-in because it
-// needs the local stack running, network access, and (for a full run) a
-// non-dry devnet faucet — when the faucet is dry it degrades to a dry-run
-// that still exercises upload, packing, signing, and RPC acceptance.
-//
-//   MINT_E2E=1 NEXT_PUBLIC_SOLANA_RPC_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
-//     pnpm test lib/mint/mint.e2e.test.ts
 import { mplCore } from "@metaplex-foundation/mpl-core";
 import { keypairIdentity, publicKey, sol } from "@metaplex-foundation/umi";
 import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
@@ -25,16 +18,13 @@ const TINY_PNG = Uint8Array.from(
   (c) => c.charCodeAt(0)
 );
 
-it.skipIf(!ENABLED)("mints 3 editions end-to-end on devnet", { timeout: 240_000 }, async () => {
+it.skipIf(!ENABLED)("mints 3 items end-to-end on devnet", { timeout: 240_000 }, async () => {
   const umi = createUmi(RPC_URL).use(mplCore());
   const keypair = umi.eddsa.generateKeypair();
   umi.use(keypairIdentity(keypair));
   const address = keypair.publicKey.toString();
   console.log("minter:", address);
 
-  // Fund the throwaway key from the devnet faucet. When the faucet is dry we
-  // still run the whole pipeline: the send will fail with a *funds* error,
-  // which proves the transactions were well-formed (parsed + simulated).
   let funded = true;
   try {
     await umi.rpc.airdrop(keypair.publicKey, sol(0.1));
@@ -83,9 +73,6 @@ it.skipIf(!ENABLED)("mints 3 editions end-to-end on devnet", { timeout: 240_000 
     });
   } catch (e) {
     if (funded) throw e;
-    // Unfunded dry-run: upload, packing, and signing must have succeeded, and
-    // the RPC must have rejected the transaction for lack of funds — not
-    // because it was malformed.
     const message = e instanceof Error ? e.message : String(e);
     console.log("dry-run failure (expected):", message);
     expect(stages).toEqual(["uploading", "signing", "sending"]);
@@ -108,11 +95,11 @@ it.skipIf(!ENABLED)("mints 3 editions end-to-end on devnet", { timeout: 240_000 
 
   const { data: nftRows } = await supabase
     .from("nfts")
-    .select("asset_address, name, edition_number, edition_total, mint_tx, collection_id")
+    .select("asset_address, name, edition_number, mint_tx, collection_id")
     .eq("creator_id", userId)
     .order("edition_number");
   expect(nftRows).toHaveLength(3);
-  expect(nftRows![0].name).toBe("E2E Test Drop #1/3");
+  expect(nftRows![0].name).toBe("E2E Test Drop #1");
   expect(nftRows![0].collection_id).not.toBeNull();
   const { data: activityRows } = await supabase
     .from("activities")

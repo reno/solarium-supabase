@@ -1,12 +1,11 @@
-export function editionName(
+export function itemName(
   baseName: string,
-  edition: number,
-  total: number
+  number: number,
+  supply: number
 ): string {
-  return total > 1 ? `${baseName} #${edition}/${total}` : baseName;
+  return supply > 1 ? `${baseName} #${number}` : baseName;
 }
 
-// Metaplex JSON metadata standard (the subset that matters for images).
 export function buildNftMetadata({
   name,
   description,

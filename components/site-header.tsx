@@ -1,50 +1,120 @@
+import Image from "next/image";
 import Link from "next/link";
 
+import { GlobalSearch } from "@/components/search/global-search";
+import { SiteNav } from "@/components/site-nav";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { WalletMenu, type WalletMenuUser } from "@/components/wallet/wallet-menu";
+import { getSolUsd } from "@/lib/price/sol";
 import { createClient } from "@/lib/supabase/server";
 
 export async function SiteHeader() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const [
+    {
+      data: { user },
+    },
+    solUsd,
+  ] = await Promise.all([supabase.auth.getUser(), getSolUsd()]);
 
   let menuUser: WalletMenuUser | null = null;
   if (user) {
     const { data: profile } = await supabase
       .from("profiles")
-      .select("username, wallet_address")
+      .select("username, wallet_address, avatar_url")
       .eq("id", user.id)
       .maybeSingle();
     menuUser = {
       id: user.id,
       username: profile?.username ?? null,
       walletAddress: profile?.wallet_address ?? null,
+      avatarUrl: profile?.avatar_url ?? null,
     };
   }
 
+  const links = [
+    { href: "/", label: "Explore" },
+    { href: "/launchpad", label: "Launchpad" },
+    ...(menuUser ? [{ href: "/collection", label: "Portfolio" }, { href: "/creator", label: "Creator" }] : []),
+  ];
+
   return (
-    <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-black/80">
-      <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6">
-        <div className="flex items-center gap-8">
-          <Link href="/" className="text-lg font-semibold tracking-tight">
-            Solarium
-          </Link>
-          <nav className="flex items-center gap-6 text-sm text-zinc-600 dark:text-zinc-400">
-            <Link href="/" className="transition-colors hover:text-zinc-950 dark:hover:text-zinc-50">
-              Explore
-            </Link>
-            <Link href="/create" className="transition-colors hover:text-zinc-950 dark:hover:text-zinc-50">
-              Create
-            </Link>
-            {menuUser && (
-              <Link href="/collection" className="transition-colors hover:text-zinc-950 dark:hover:text-zinc-50">
-                My NFTs
-              </Link>
-            )}
-          </nav>
+    <header
+      style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 50,
+        height: "var(--nav-h)",
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-9)",
+        padding: "0 var(--page-gutter)",
+        borderBottom: "1px solid var(--border-subtle)",
+        background: "color-mix(in oklab, var(--bg-page) 85%, transparent)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+      }}
+    >
+      <Link
+        href="/"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "var(--space-4)",
+          textDecoration: "none",
+        }}
+      >
+        <Image
+          src="/logo.svg"
+          alt="Solarium"
+          width={35}
+          height={40}
+          priority
+          unoptimized
+          style={{ display: "block" }}
+        />
+        <span
+          style={{
+            font: "var(--weight-bold) 16px/1 var(--font-sans)",
+            letterSpacing: "0.08em",
+            color: "var(--accent)",
+          }}
+        >
+          SOLARIUM
+        </span>
+      </Link>
+      <SiteNav links={links} />
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-6)", marginLeft: "auto" }}>
+        <GlobalSearch />
+        <div
+          title="SOL / USD"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "var(--space-4)",
+            height: "var(--control-h-md)",
+            padding: "0 var(--space-5)",
+            background: "var(--surface-2)",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: "var(--radius-pill)",
+          }}
+        >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "var(--radius-pill)",
+              background: "var(--live)",
+              animation: "sol-pulse 2s ease-in-out infinite",
+            }}
+          />
+          <span style={{ fontSize: "var(--text-2xs)", fontWeight: "var(--weight-semibold)", letterSpacing: "0.04em", color: "var(--text-tertiary)" }}>SOL</span>
+          <span className="sol-num" style={{ fontSize: "var(--text-xs)", color: "var(--text-primary)" }}>
+            ${solUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
         </div>
-        <WalletMenu user={menuUser} />
+        <ThemeToggle />
+        <WalletMenu user={menuUser} solUsd={solUsd} />
       </div>
     </header>
   );
