@@ -300,12 +300,30 @@ export type DeployResult = {
   itemsLoaded: number;
 };
 
+/** How often to re-broadcast a signed transaction that hasn't confirmed yet. */
+const REBROADCAST_INTERVAL_MS = 2000;
+
+/**
+ * Send one transaction and wait for it, re-broadcasting until it lands.
+ *
+ * A blockhash is valid for ~150 slots (roughly 60-90s), and two things eat that window here:
+ * the creator has to approve in their wallet before the transaction can even be sent, and a
+ * public devnet RPC drops transactions routinely with nothing to re-broadcast them. Either way
+ * the result is the same "block height exceeded" — the transaction never landed and the
+ * blockhash aged out. So the signed transaction is re-sent on a timer for as long as we are
+ * waiting. Re-sending is free and safe: it is byte-identical, so it carries the same signature
+ * and the network deduplicates it.
+ */
 async function sendAndConfirm(
   umi: Umi,
   builder: TransactionBuilder,
   extraSigners: Signer[] = []
 ): Promise<string> {
-  const blockhash = await withRpcRetry(() => umi.rpc.getLatestBlockhash());
+  // "confirmed" rather than "finalized": a finalized blockhash is already ~32 slots old, which
+  // is validity we would be throwing away before the wallet has even prompted.
+  const blockhash = await withRpcRetry(() =>
+    umi.rpc.getLatestBlockhash({ commitment: "confirmed" })
+  );
   const withBlockhash = builder.setFeePayer(umi.identity).setBlockhash(blockhash);
   let transaction = withBlockhash.build(umi);
   // Wallet first: some wallets rewrite the transaction while signing, which would invalidate
@@ -315,14 +333,49 @@ async function sendAndConfirm(
     if (signer.publicKey === umi.identity.publicKey) continue;
     transaction = await signer.signTransaction(transaction);
   }
+
+  // The first send keeps preflight on, so a genuine program error (a guard that rejects, a bad
+  // account) surfaces here with a usable message instead of a transaction that silently never
+  // lands and is only reported 90 seconds later as an expiry.
   const signatureBytes = await withRpcRetry(() => umi.rpc.sendTransaction(transaction));
-  await withRpcRetry(() =>
-    umi.rpc.confirmTransaction(signatureBytes, {
+  const signature = base58.deserialize(signatureBytes)[0];
+
+  let waiting = true;
+  const rebroadcast = (async () => {
+    while (waiting) {
+      await new Promise((resolve) => setTimeout(resolve, REBROADCAST_INTERVAL_MS));
+      if (!waiting) return;
+      // Preflight off on re-sends: it would only re-simulate work the first send already
+      // validated, and a transient simulation failure must not stop us re-broadcasting.
+      await umi.rpc.sendTransaction(transaction, { skipPreflight: true }).catch(() => {});
+    }
+  })();
+
+  try {
+    await umi.rpc.confirmTransaction(signatureBytes, {
       strategy: { type: "blockhash", ...blockhash },
       commitment: "confirmed",
-    })
-  );
-  return base58.deserialize(signatureBytes)[0];
+    });
+    return signature;
+  } catch (e) {
+    // Expiry and "it landed" are a genuine race, and getting this wrong is expensive: a caller
+    // that retries a candy machine creation which actually succeeded deploys a *second* machine
+    // and strands the first one's rent. So never report failure without asking the chain.
+    const [status] = await withRpcRetry(() => umi.rpc.getSignatureStatuses([signatureBytes]));
+    if (status && !status.error) return signature;
+    if (status?.error) {
+      throw new Error(`Transaction ${signature} failed on chain: ${String(status.error)}`);
+    }
+    const message = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `Transaction ${signature} did not land before its blockhash expired (${message}). ` +
+        `Nothing was charged for it. This usually means the network dropped it or the wallet ` +
+        `approval took too long — retry, approving promptly when your wallet prompts.`
+    );
+  } finally {
+    waiting = false;
+    await rebroadcast;
+  }
 }
 
 /**
@@ -345,7 +398,6 @@ export async function deployCandyMachine(p: DeployParams): Promise<DeployResult>
   // 1. The Core collection. Reuse the creator's existing one when there is one; otherwise create
   //    it here so it carries the Royalties plugin (the quick-mint flow doesn't add one).
   let collectionAddress = p.collectionAddress;
-  let collectionSigner: Signer | null = null;
   if (!collectionAddress) {
     p.onStage?.("collection");
     const signer = generateSigner(umi);
@@ -367,7 +419,18 @@ export async function deployCandyMachine(p: DeployParams): Promise<DeployResult>
       [signer]
     );
     collectionAddress = signer.publicKey;
-    collectionSigner = signer;
+    // Record it immediately, not with the rest in step 3. The candy machine creation below can
+    // fail (an expired blockhash is the common one), and without this a retry would take the
+    // `!collectionAddress` branch again and mint a second, orphaned collection.
+    const { error } = await supabase
+      .from("collections")
+      .update({ collection_address: collectionAddress })
+      .eq("id", p.collectionId);
+    if (error) {
+      throw new Error(
+        `Collection ${collectionAddress} was created on chain, but recording it failed: ${error.message}`
+      );
+    }
   }
 
   // 2. The candy machine + its guard, in one transaction.
@@ -392,10 +455,10 @@ export async function deployCandyMachine(p: DeployParams): Promise<DeployResult>
     guards: {},
     groups: groups.map(({ label, guards }) => ({ label, guards })),
   });
-  await sendAndConfirm(umi, createBuilder, [
-    candyMachineSigner,
-    ...(collectionSigner ? [collectionSigner] : []),
-  ]);
+  // Only the candy machine's own keypair signs here. The collection was created in its own
+  // transaction above and merely referenced by this one, so passing its signer would try to
+  // add a signature the message has no slot for.
+  await sendAndConfirm(umi, createBuilder, [candyMachineSigner]);
 
   const candyMachine = candyMachineSigner.publicKey;
   const candyGuard = (await fetchCandyMachine(umi, publicKey(candyMachine))).mintAuthority;
