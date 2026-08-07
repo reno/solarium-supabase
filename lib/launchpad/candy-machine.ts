@@ -13,6 +13,7 @@ import {
   route,
   updateCandyGuard,
 } from "@metaplex-foundation/mpl-core-candy-machine";
+import { setComputeUnitLimit } from "@metaplex-foundation/mpl-toolbox";
 import {
   generateSigner,
   publicKey,
@@ -334,11 +335,7 @@ export async function deployCandyMachine(params: DeployParams): Promise<DeployRe
     signatures.push(
       await sendBuilder(
         umi,
-        addConfigLines(umi, {
-          candyMachine: publicKey(row.candyMachineAddress),
-          index: chunk.index,
-          configLines: chunk.lines,
-        })
+        addConfigLinesBuilder(umi, publicKey(row.candyMachineAddress), chunk.index, chunk.lines)
       )
     );
     loaded = chunk.index + chunk.lines.length;
@@ -368,6 +365,38 @@ async function writeGroupLabels(supabase: SupabaseClient, phases: PhaseInput[]):
 }
 
 /**
+ * A config line is tiny on the wire — the variable half is just a number and "<n>.json" — so
+ * hundreds of them fit inside one transaction's 1232 bytes. Compute is the real ceiling: the
+ * program spends roughly 4.4k units writing each line, so the 200k default budget runs out
+ * around 45 lines and the transaction dies mid-batch with "exceeded CUs meter at BPF
+ * instruction". Size alone is therefore the wrong packing constraint; ask for the budget the
+ * batch actually needs, and cap the batch so that request stays under the per-transaction max.
+ */
+const COMPUTE_UNITS_PER_CONFIG_LINE = 5_000;
+const COMPUTE_UNITS_BASE = 40_000;
+const MAX_TRANSACTION_COMPUTE_UNITS = 1_400_000;
+const MAX_CONFIG_LINES_PER_TRANSACTION = Math.floor(
+  (MAX_TRANSACTION_COMPUTE_UNITS - COMPUTE_UNITS_BASE) / COMPUTE_UNITS_PER_CONFIG_LINE
+);
+
+/**
+ * The builder used both to measure a chunk and to send it — they must be the same shape, or the
+ * compute-budget instruction's own bytes would be missing from the fit calculation.
+ */
+function addConfigLinesBuilder(
+  umi: Umi,
+  candyMachine: PublicKey,
+  index: number,
+  configLines: { name: string; uri: string }[]
+): TransactionBuilder {
+  const units = Math.min(
+    MAX_TRANSACTION_COMPUTE_UNITS,
+    COMPUTE_UNITS_BASE + configLines.length * COMPUTE_UNITS_PER_CONFIG_LINE
+  );
+  return setComputeUnitLimit(umi, { units }).add(addConfigLines(umi, { candyMachine, index, configLines }));
+}
+
+/**
  * Greedily pack config lines into as few transactions as possible by asking umi whether the
  * built instruction still fits — the same trick the mint flow uses, and the reason a 100-item
  * drop is a couple of wallet prompts rather than a hundred.
@@ -384,7 +413,9 @@ function configLineChunks(
   for (let n = from; n < to; n++) {
     const line = configLineFor(n + 1);
     const candidate = [...lines, line];
-    const fits = addConfigLines(umi, { candyMachine, index, configLines: candidate }).fitsInOneTransaction(umi);
+    const fits =
+      candidate.length <= MAX_CONFIG_LINES_PER_TRANSACTION &&
+      addConfigLinesBuilder(umi, candyMachine, index, candidate).fitsInOneTransaction(umi);
     if (!fits && lines.length > 0) {
       chunks.push({ index, lines });
       index = n;
