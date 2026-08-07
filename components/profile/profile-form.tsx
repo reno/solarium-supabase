@@ -4,9 +4,31 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { Button, Input } from "@/components/design";
 import { createClient } from "@/lib/supabase/client";
 
 const USERNAME_PATTERN = /^[a-z0-9_]{3,30}$/;
+
+const FIELD_LABEL: React.CSSProperties = {
+  display: "block",
+  font: "var(--type-label)",
+  fontSize: "var(--text-2xs)",
+  textTransform: "uppercase",
+  letterSpacing: "var(--tracking-label)",
+  color: "var(--text-tertiary)",
+  marginBottom: "var(--space-4)",
+};
+const TEXTAREA: React.CSSProperties = {
+  width: "100%",
+  padding: "var(--space-5)",
+  background: "var(--surface-inset)",
+  border: "1px solid var(--border-default)",
+  borderRadius: "var(--radius-control)",
+  color: "var(--text-primary)",
+  fontFamily: "var(--font-sans)",
+  fontSize: "var(--text-md)",
+  resize: "vertical",
+};
 
 export type ProfileFormInitial = {
   username: string | null;
@@ -32,7 +54,7 @@ export function ProfileForm({
 
   return (
     <form
-      className="flex flex-col gap-6"
+      style={{ display: "flex", flexDirection: "column", gap: "var(--space-8)" }}
       onSubmit={async (event) => {
         event.preventDefault();
         const name = username.trim().toLowerCase();
@@ -84,25 +106,18 @@ export function ProfileForm({
         }
       }}
     >
-      <div className="flex items-center gap-4">
-        <div className="h-16 w-16 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-7)" }}>
+        <div style={{ width: 64, height: 64, borderRadius: "var(--radius-pill)", overflow: "hidden", background: avatarPreview ? "var(--surface-inset)" : "conic-gradient(from 180deg, var(--solar-2), var(--cyan-2), var(--solar-3))", flex: "0 0 auto" }}>
           {avatarPreview && (
-            <Image
-              src={avatarPreview}
-              alt="Avatar preview"
-              width={64}
-              height={64}
-              className="h-full w-full object-cover"
-              unoptimized
-            />
+            <Image src={avatarPreview} alt="Avatar preview" width={64} height={64} style={{ height: "100%", width: "100%", objectFit: "cover" }} unoptimized />
           )}
         </div>
-        <label className="cursor-pointer text-sm font-medium text-zinc-700 underline-offset-4 hover:underline dark:text-zinc-300">
+        <label style={{ cursor: "pointer", fontSize: "var(--text-md)", fontWeight: "var(--weight-semibold)", color: "var(--accent)" }}>
           Upload avatar
           <input
             type="file"
             accept="image/*"
-            className="hidden"
+            style={{ display: "none" }}
             onChange={(event) => {
               const file = event.target.files?.[0] ?? null;
               setAvatarFile(file);
@@ -112,42 +127,21 @@ export function ProfileForm({
         </label>
       </div>
 
-      <label className="flex flex-col gap-2 text-sm font-medium">
-        Username
-        <input
-          type="text"
-          required
-          value={username}
-          onChange={(event) => setUsername(event.target.value)}
-          placeholder="your_name"
-          autoComplete="off"
-          className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 font-normal outline-none focus:border-zinc-500 dark:border-zinc-700"
-        />
-      </label>
+      <div>
+        <label style={FIELD_LABEL}>Username</label>
+        <Input required value={username} onChange={(event) => setUsername(event.target.value)} placeholder="your_name" autoComplete="off" />
+      </div>
 
-      <label className="flex flex-col gap-2 text-sm font-medium">
-        Bio <span className="font-normal text-zinc-500">(optional)</span>
-        <textarea
-          value={bio}
-          onChange={(event) => setBio(event.target.value)}
-          rows={3}
-          maxLength={500}
-          placeholder="Tell collectors about yourself"
-          className="resize-none rounded-lg border border-zinc-300 bg-transparent px-3 py-2 font-normal outline-none focus:border-zinc-500 dark:border-zinc-700"
-        />
-      </label>
+      <div>
+        <label style={FIELD_LABEL}>Bio (optional)</label>
+        <textarea value={bio} onChange={(event) => setBio(event.target.value)} rows={3} maxLength={500} placeholder="Tell collectors about yourself" style={TEXTAREA} />
+      </div>
 
-      {error && (
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-      )}
+      {error && <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--price-down)" }}>{error}</p>}
 
-      <button
-        type="submit"
-        disabled={saving}
-        className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-black dark:hover:bg-zinc-300"
-      >
-        {saving ? "Saving…" : "Save profile"}
-      </button>
+      <div>
+        <Button type="submit" variant="primary" loading={saving} disabled={saving}>Save profile</Button>
+      </div>
     </form>
   );
 }

@@ -5,12 +5,13 @@ import {
   useWalletAccountTransactionSigner,
 } from "@solana/react";
 import type { UiWalletAccount } from "@wallet-standard/react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { ArtTile, Button, Dialog, Input, Select } from "@/components/design";
 import { ProgressModal } from "@/components/progress-modal";
+import { useToast } from "@/components/toast/toast-provider";
 import type { ProgressStepDef } from "@/components/progress-steps";
 import {
   cancelListing,
@@ -43,8 +44,6 @@ export type OwnedNft = {
   name: string;
   imageUrl: string;
   assetAddress: string;
-  editionNumber: number | null;
-  editionTotal: number | null;
   collectionId: string | null;
   collectionAddress: string | null;
   listing: { id: string; priceLamports: string } | null;
@@ -54,37 +53,61 @@ export function MyNftCard({
   nft,
   userId,
   href,
+  defaultPrice,
+  floorSol,
+  topBidSol,
+  royaltyBps,
 }: {
   nft: OwnedNft;
   userId: string;
   href?: string;
+  /** Prefill the list price (SOL) — used on the launchpad so items list at the phase price. */
+  defaultPrice?: string;
+  /** Quick-fill + below-floor-warning context for the list form. */
+  floorSol?: string | null;
+  topBidSol?: string | null;
+  royaltyBps?: number;
 }) {
+  const priceSol = nft.listing ? lamportsToSol(BigInt(nft.listing.priceLamports)) : null;
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-      <Link href={href ?? `/nft/${nft.id}`} className="flex flex-col">
-        <div className="relative aspect-square bg-zinc-100 dark:bg-zinc-900">
-          <Image
-            src={nft.imageUrl}
-            alt={nft.name}
-            fill
-            sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-            className="object-cover"
-            unoptimized
-          />
+    <div
+      style={{
+        background: "var(--surface-card)",
+        border: "1px solid var(--border-subtle)",
+        borderRadius: "var(--radius-card)",
+        boxShadow: "var(--shadow-card)",
+        overflow: "hidden",
+      }}
+    >
+      <Link href={href ?? `/nft/${nft.id}`} style={{ display: "block", textDecoration: "none" }}>
+        <div style={{ padding: "var(--space-4)", paddingBottom: 0 }}>
+          <ArtTile src={nft.imageUrl} label={nft.name} />
         </div>
-        <div className="p-4 pb-0">
-          <h2 className="font-medium">{nft.name}</h2>
-          {nft.listing ? (
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Listed for {lamportsToSol(BigInt(nft.listing.priceLamports))} SOL
-            </p>
+        <div style={{ padding: "var(--space-5) var(--space-5) 0" }}>
+          <div
+            style={{
+              fontSize: "var(--text-md)",
+              fontWeight: "var(--weight-semibold)",
+              color: "var(--text-primary)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {nft.name}
+          </div>
+          {priceSol ? (
+            <div style={{ marginTop: "var(--space-3)", fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums", fontSize: "var(--text-md)", color: "var(--text-primary)" }}>
+              {priceSol}
+              <span style={{ fontSize: "0.78em", marginLeft: 3, color: "var(--text-secondary)" }}>SOL</span>
+            </div>
           ) : (
-            <p className="text-sm text-zinc-500">Not listed</p>
+            <div style={{ marginTop: "var(--space-3)", fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>Not listed</div>
           )}
         </div>
       </Link>
-      <div className="p-4">
-        <OwnedNftControls nft={nft} userId={userId} />
+      <div style={{ padding: "var(--space-5)" }}>
+        <OwnedNftControls nft={nft} userId={userId} defaultPrice={defaultPrice} floorSol={floorSol} topBidSol={topBidSol} royaltyBps={royaltyBps} />
       </div>
     </div>
   );
@@ -93,42 +116,58 @@ export function MyNftCard({
 export function OwnedNftControls({
   nft,
   userId,
+  defaultPrice,
+  floorSol,
+  topBidSol,
+  royaltyBps,
 }: {
   nft: OwnedNft;
   userId: string;
+  defaultPrice?: string;
+  floorSol?: string | null;
+  topBidSol?: string | null;
+  royaltyBps?: number;
 }) {
   const [selectedWalletAccount] = useSelectedWalletAccount();
   if (!selectedWalletAccount) {
     return (
-      <p className="text-sm text-zinc-500">
+      <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>
         Connect your wallet to manage this NFT.
       </p>
     );
   }
-  return <CardActions account={selectedWalletAccount} nft={nft} userId={userId} />;
+  return <CardActions account={selectedWalletAccount} nft={nft} userId={userId} defaultPrice={defaultPrice} floorSol={floorSol} topBidSol={topBidSol} royaltyBps={royaltyBps} />;
 }
 
 function CardActions({
   account,
   nft,
   userId,
+  defaultPrice,
+  floorSol,
+  topBidSol,
+  royaltyBps = 0,
 }: {
   account: UiWalletAccount;
   nft: OwnedNft;
   userId: string;
+  defaultPrice?: string;
+  floorSol?: string | null;
+  topBidSol?: string | null;
+  royaltyBps?: number;
 }) {
-  const [price, setPrice] = useState("");
+  const [price, setPrice] = useState(defaultPrice ?? "");
+  const [expiry, setExpiry] = useState("Never");
+  const [confirmDelist, setConfirmDelist] = useState(false);
   const [action, setAction] = useState<"list" | "cancel" | null>(null);
   const [phase, setPhase] = useState<"idle" | "active" | "error">("idle");
   const [stage, setStage] = useState<ListStage | CancelStage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const kitSigner = useWalletAccountTransactionSigner(
-    account,
-    getSolanaChain()
-  );
+  const kitSigner = useWalletAccountTransactionSigner(account, getSolanaChain());
   const umi = useMemo(() => createUmiForWallet(kitSigner), [kitSigner]);
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
+  const { showToast } = useToast();
   const busy = phase === "active";
 
   const run = async (kind: "list" | "cancel", perform: () => Promise<unknown>) => {
@@ -139,6 +178,11 @@ function CardActions({
       await perform();
       setPhase("idle");
       setAction(null);
+      showToast(
+        kind === "list"
+          ? { type: "success", title: "Listing live", message: nft.name }
+          : { type: "success", title: "Listing cancelled", message: `${nft.name} · stays in your wallet` }
+      );
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -147,53 +191,67 @@ function CardActions({
   };
 
   return (
-    <div className="flex flex-col gap-2">
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
       {nft.listing ? (
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
+          block
+          icon="x"
+          loading={busy && action === "cancel"}
           disabled={busy}
-          className="rounded-full border border-zinc-300 px-4 py-1.5 text-sm transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          onClick={() =>
-            run("cancel", () =>
-              cancelListing({
-                supabase,
-                umi,
-                nft: {
-                  id: nft.id,
-                  assetAddress: nft.assetAddress,
-                  collectionAddress: nft.collectionAddress,
-                },
-                listingId: nft.listing!.id,
-                sellerId: userId,
-                onStage: setStage,
-              })
-            )
-          }
+          onClick={() => setConfirmDelist(true)}
         >
-          {busy && action === "cancel" ? "Cancelling…" : "Cancel listing"}
-        </button>
+          Cancel listing
+        </Button>
       ) : (
-        <div className="flex gap-2">
-          <input
-            type="text"
-            inputMode="decimal"
-            placeholder="Price in SOL"
-            value={price}
-            onChange={(event) => setPrice(event.target.value)}
-            className="w-full min-w-0 rounded-lg border border-zinc-300 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
-          />
-          <button
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+          <div style={{ display: "flex", gap: "var(--space-4)" }}>
+            <Input
+              size="sm"
+              numeric
+              suffix="SOL"
+              inputMode="decimal"
+              placeholder="Price"
+              value={price}
+              onChange={(event) => setPrice(event.target.value)}
+              containerStyle={{ flex: 1, minWidth: 0 }}
+            />
+            <Select
+              size="sm"
+              options={["Never", "24h", "7d", "30d"]}
+              value={expiry}
+              onChange={(event) => setExpiry(event.target.value)}
+            />
+          </div>
+
+          {(floorSol || topBidSol) && (
+            <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
+              {floorSol ? <QuickFill label="Floor" onClick={() => setPrice(floorSol)} /> : null}
+              {topBidSol ? <QuickFill label="Top bid" onClick={() => setPrice(topBidSol)} /> : null}
+              {floorSol ? <QuickFill label="Floor +10%" onClick={() => setPrice((parseFloat(floorSol) * 1.1).toFixed(4))} /> : null}
+            </div>
+          )}
+
+          {price.trim() ? (
+            <ReceiveLine price={price} floorSol={floorSol} royaltyBps={royaltyBps} />
+          ) : null}
+
+          <Button
+            variant="primary"
+            size="sm"
+            block
+            loading={busy && action === "list"}
             disabled={busy || !price.trim()}
-            className="shrink-0 rounded-full bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-black dark:hover:bg-zinc-300"
             onClick={() =>
               run("list", async () => {
                 let priceLamports: bigint;
                 try {
                   priceLamports = solToLamports(price);
                 } catch {
-                  throw new Error(
-                    "Enter a valid SOL amount, e.g. 0.5 (up to 9 decimals)."
-                  );
+                  throw new Error("Enter a valid SOL amount, e.g. 0.5 (up to 9 decimals).");
                 }
+                const hours: Record<string, number | null> = { Never: null, "24h": 24, "7d": 168, "30d": 720 };
                 await listNft({
                   supabase,
                   umi,
@@ -204,16 +262,57 @@ function CardActions({
                   },
                   sellerId: userId,
                   priceLamports,
+                  expiresInHours: hours[expiry],
                   onStage: setStage,
                 });
                 setPrice("");
+                setExpiry("Never");
               })
             }
           >
-            {busy && action === "list" ? "Listing…" : "List"}
-          </button>
+            List
+          </Button>
         </div>
       )}
+      <Dialog
+        open={confirmDelist}
+        onClose={() => setConfirmDelist(false)}
+        title="Cancel listing"
+        footer={
+          <>
+            <Button variant="ghost" block onClick={() => setConfirmDelist(false)}>Keep listed</Button>
+            <Button
+              variant="primary"
+              block
+              onClick={() => {
+                setConfirmDelist(false);
+                run("cancel", () =>
+                  cancelListing({
+                    supabase,
+                    umi,
+                    nft: {
+                      id: nft.id,
+                      assetAddress: nft.assetAddress,
+                      collectionAddress: nft.collectionAddress,
+                    },
+                    listingId: nft.listing!.id,
+                    sellerId: userId,
+                    onStage: setStage,
+                  })
+                );
+              }}
+            >
+              Delist
+            </Button>
+          </>
+        }
+      >
+        <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-secondary)", textWrap: "pretty" }}>
+          <strong style={{ color: "var(--text-primary)" }}>{nft.name}</strong> will be removed from sale. It stays in
+          your wallet — you can relist it anytime.
+        </p>
+      </Dialog>
+
       {phase !== "idle" && action && (
         <ProgressModal
           title={action === "list" ? "Listing NFT" : "Cancelling listing"}
@@ -228,6 +327,48 @@ function CardActions({
           }}
         />
       )}
+    </div>
+  );
+}
+
+/** A tiny quick-fill chip for the list form (Floor / Top bid / Floor +10%). */
+function QuickFill({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: "2px var(--space-4)",
+        borderRadius: "var(--radius-xs)",
+        border: "1px solid var(--border-subtle)",
+        background: "var(--surface-2)",
+        color: "var(--text-secondary)",
+        fontFamily: "var(--font-mono)",
+        fontSize: "var(--text-2xs)",
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/**
+ * "You receive" for the list form. Under the design's add-on-top money model (#7/#8) the seller
+ * receives the FULL listed price — the buyer pays the fee + royalty on top — so "you receive" is
+ * the price itself, not price minus fees. Warns when listing below floor.
+ */
+function ReceiveLine({ price, floorSol, royaltyBps }: { price: string; floorSol?: string | null; royaltyBps: number }) {
+  const p = parseFloat(price);
+  const below = floorSol != null && Number.isFinite(p) && p < parseFloat(floorSol);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)", color: "var(--text-tertiary)" }}>
+        You receive {Number.isFinite(p) ? p : "—"} SOL · buyer pays +2% fee{royaltyBps ? ` + ${(royaltyBps / 100).toFixed(1)}% royalty` : ""}
+      </span>
+      {below ? (
+        <span style={{ fontSize: "var(--text-2xs)", color: "var(--price-down)" }}>Below floor ({floorSol} SOL)</span>
+      ) : null}
     </div>
   );
 }

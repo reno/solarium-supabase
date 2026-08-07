@@ -17,11 +17,11 @@ export default async function WelcomePage() {
     .maybeSingle();
 
   return (
-    <main className="mx-auto w-full max-w-lg flex-1 px-6 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">
+    <main style={{ maxWidth: 560, margin: "0 auto", width: "100%", flex: 1, padding: "var(--space-13) var(--page-gutter)" }}>
+      <h1 style={{ font: "var(--type-h1)", letterSpacing: "var(--tracking-heading)", color: "var(--text-primary)", margin: 0 }}>
         Set up your profile
       </h1>
-      <p className="mt-2 mb-8 text-zinc-600 dark:text-zinc-400">
+      <p style={{ font: "var(--type-body)", color: "var(--text-secondary)", margin: "var(--space-4) 0 var(--space-10)" }}>
         Pick a username so collectors and creators can find you.
       </p>
       <ProfileForm

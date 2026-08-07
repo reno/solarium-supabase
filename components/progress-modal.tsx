@@ -1,5 +1,6 @@
 "use client";
 
+import { Button, Dialog, Icon } from "@/components/design";
 import { ProgressSteps, type ProgressStepDef } from "@/components/progress-steps";
 
 export function ProgressModal({
@@ -17,30 +18,57 @@ export function ProgressModal({
   errorMessage?: string | null;
   onClose: () => void;
 }) {
+  // While active a signed tx may be in flight — the dialog isn't dismissible (no close
+  // button, backdrop click disabled), mirroring TxFlow's confirming phase.
+  const dismissible = status !== "active";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white p-8 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="mb-8 text-xl font-medium">{title}</h2>
-        <ProgressSteps
-          steps={steps}
-          currentKey={status === "done" ? null : currentKey}
-          status={status === "error" ? "error" : "active"}
-        />
-        {status === "error" && errorMessage && (
-          <p className="mt-6 text-sm text-red-600 dark:text-red-400">
+    <Dialog
+      open
+      onClose={dismissible ? onClose : undefined}
+      title={title}
+      footer={
+        status === "done" ? (
+          <Button variant="primary" block onClick={onClose}>
+            Done
+          </Button>
+        ) : status === "error" ? (
+          <Button variant="ghost" block onClick={onClose}>
+            Close
+          </Button>
+        ) : undefined
+      }
+    >
+      <ProgressSteps
+        steps={steps}
+        currentKey={status === "done" ? null : currentKey}
+        status={status === "error" ? "error" : "active"}
+      />
+
+      {status === "active" && (
+        <p style={{ margin: "var(--space-7) 0 0", fontSize: "var(--text-2xs)", color: "var(--text-tertiary)" }}>
+          Keep this open — don&apos;t close the tab until it finishes.
+        </p>
+      )}
+
+      {status === "error" && errorMessage && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "var(--space-4)",
+            margin: "var(--space-7) 0 0",
+            padding: "var(--space-5)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--surface-inset)",
+          }}
+        >
+          <Icon name="alert-circle" size={15} color="var(--price-down)" style={{ position: "relative", top: 1, flex: "0 0 auto" }} />
+          <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--price-down)", wordBreak: "break-word" }}>
             {errorMessage}
           </p>
-        )}
-        {status !== "active" && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="mt-8 w-full rounded-full bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-black dark:hover:bg-zinc-300"
-          >
-            {status === "error" ? "Close" : "Done"}
-          </button>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </Dialog>
   );
 }

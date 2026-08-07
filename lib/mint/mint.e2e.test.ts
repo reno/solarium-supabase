@@ -25,7 +25,7 @@ const TINY_PNG = Uint8Array.from(
   (c) => c.charCodeAt(0)
 );
 
-it.skipIf(!ENABLED)("mints 3 editions end-to-end on devnet", { timeout: 240_000 }, async () => {
+it.skipIf(!ENABLED)("mints 3 items end-to-end on devnet", { timeout: 240_000 }, async () => {
   const umi = createUmi(RPC_URL).use(mplCore());
   const keypair = umi.eddsa.generateKeypair();
   umi.use(keypairIdentity(keypair));
@@ -108,11 +108,11 @@ it.skipIf(!ENABLED)("mints 3 editions end-to-end on devnet", { timeout: 240_000 
 
   const { data: nftRows } = await supabase
     .from("nfts")
-    .select("asset_address, name, edition_number, edition_total, mint_tx, collection_id")
+    .select("asset_address, name, edition_number, mint_tx, collection_id")
     .eq("creator_id", userId)
     .order("edition_number");
   expect(nftRows).toHaveLength(3);
-  expect(nftRows![0].name).toBe("E2E Test Drop #1/3");
+  expect(nftRows![0].name).toBe("E2E Test Drop #1");
   expect(nftRows![0].collection_id).not.toBeNull();
   const { data: activityRows } = await supabase
     .from("activities")

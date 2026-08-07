@@ -53,3 +53,10 @@ supabase/.branches/
 .claude/
 AGENTS.md
 CLAUDE.md
+
+docs/
+
+.vscode/
+
+# Throwaway devnet keypairs minted by scripts/seed-onchain.e2e.test.ts
+.e2e-onchain-wallets.json
