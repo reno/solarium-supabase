@@ -10,8 +10,9 @@ import { useMemo, useState } from "react";
 
 import { Button, IconButton } from "@/components/design";
 import { BUY_STEPS } from "@/components/listings/buy-button";
-import { TxFlow } from "@/components/tx/tx-flow";
+import { TxFlow, type TxStage } from "@/components/tx/tx-flow";
 import { useToast } from "@/components/toast/toast-provider";
+import { mintFromCandyMachine } from "@/lib/launchpad/candy-machine";
 import { buyListing } from "@/lib/listings/buy";
 import { explorerTxUrl, getSolanaChain } from "@/lib/solana/config";
 import { useSolBalance } from "@/lib/solana/use-balance";
@@ -19,14 +20,35 @@ import { createUmiForWallet } from "@/lib/solana/umi";
 import { createClient } from "@/lib/supabase/client";
 
 /**
- * "Mint" from a launchpad = buy the next available edition(s) — creator-listed NFTs in the
- * collection, priced at the active phase (#14) — through the verified settlement flow. Phase
- * window / allowlist / per-wallet limit are enforced app-side and arrive as `disabledReason`
- * (advisory, #12). The Mint dialog (TxFlow) shows the phase, reveal delay, and price×qty + fee;
- * a quantity stepper is clamped to what's available and the per-wallet remaining.
+ * A drop mints one of two ways, and this button is the seam between them.
+ *
+ * listing-backed  "Mint" = buy the next creator-listed edition through the verified settlement
+ *                 flow. Phase window / allowlist / per-wallet limit are enforced app-side and
+ *                 arrive as `disabledReason` — advisory only.
+ * candy machine   "Mint" = the buyer's own wallet calls `mintV1`. The same rules are guards on
+ *                 chain, so `disabledReason` becomes a courtesy: a buyer who gets past it still
+ *                 can't mint outside their phase, over their limit, or off the allowlist.
+ *
+ * The dialog differs too. A listing purchase pays the seller plus fee plus royalty on top; a
+ * candy-machine mint pays the guard's price plus the platform's fixed fee, and the creator
+ * royalty is a plugin on the collection that applies to secondary sales, not to the mint.
  */
+export type CandyMachineMintSource = {
+  collectionId: string;
+  candyMachine: string;
+  candyGuard: string;
+  collectionAddress: string;
+  creatorWallet: string;
+  treasuryWallet: string | null;
+  guardLabel: string;
+  /** Non-null only when the active phase is allowlist-gated; the proof is built from it. */
+  allowlist: string[] | null;
+  itemsRemaining: number;
+};
+
 export function LaunchpadMintButton({
   availableListingIds,
+  candyMachine = null,
   priceSol,
   viewerId,
   disabledReason,
@@ -37,6 +59,7 @@ export function LaunchpadMintButton({
   solUsd,
 }: {
   availableListingIds: string[];
+  candyMachine?: CandyMachineMintSource | null;
   priceSol: string | null;
   viewerId: string | null;
   disabledReason: string | null;
@@ -69,7 +92,8 @@ export function LaunchpadMintButton({
       </Button>
     );
   }
-  if (availableListingIds.length === 0) {
+  const available = candyMachine ? candyMachine.itemsRemaining : availableListingIds.length;
+  if (available === 0) {
     return (
       <Button variant="primary" size="lg" block disabled>
         Sold out
@@ -80,6 +104,8 @@ export function LaunchpadMintButton({
     <Inner
       account={account}
       availableListingIds={availableListingIds}
+      candyMachine={candyMachine}
+      available={available}
       priceSol={priceSol ?? ""}
       perWalletRemaining={perWalletRemaining}
       phaseName={phaseName}
@@ -88,6 +114,19 @@ export function LaunchpadMintButton({
       solUsd={solUsd}
     />
   );
+}
+
+// The candy-machine flow's stages. "Proving allowlist" is a real extra transaction — the merkle
+// proof is written to a PDA before the mint — so it is only listed when the phase is gated;
+// showing a step that will never run reads as a hang.
+function candyMintSteps(gated: boolean): TxStage[] {
+  return [
+    ...(gated ? [{ key: "allowlist", label: "Proving allowlist" }] : []),
+    { key: "signing", label: "Waiting for your wallet" },
+    { key: "sending", label: "Sending transaction" },
+    { key: "confirming", label: "Confirming on Solana" },
+    { key: "recording", label: "Recording your mint" },
+  ];
 }
 
 function revealLabel(revealAt: string | null): string | null {
@@ -103,6 +142,8 @@ function revealLabel(revealAt: string | null): string | null {
 function Inner({
   account,
   availableListingIds,
+  candyMachine,
+  available,
   priceSol,
   perWalletRemaining,
   phaseName,
@@ -112,6 +153,8 @@ function Inner({
 }: {
   account: UiWalletAccount;
   availableListingIds: string[];
+  candyMachine: CandyMachineMintSource | null;
+  available: number;
   priceSol: string;
   perWalletRemaining: number | null;
   phaseName: string | null;
@@ -126,14 +169,16 @@ function Inner({
   const { showToast } = useToast();
   const balanceLamports = useSolBalance(account.address);
 
-  const maxQty = Math.max(1, Math.min(availableListingIds.length, perWalletRemaining ?? availableListingIds.length));
+  const maxQty = Math.max(1, Math.min(available, perWalletRemaining ?? available));
   const [qty, setQty] = useState(1);
   const [flowOpen, setFlowOpen] = useState(false);
   const clampedQty = Math.min(qty, maxQty);
 
   const priceNum = parseFloat(priceSol) || 0;
   const feePer = priceNum * 0.02;
-  const royPer = (priceNum * royaltyBps) / 10000;
+  // A candy-machine mint is a primary sale: the creator is the seller, so there is no royalty leg
+  // to pay them on top of their own price. Royalties are on the collection and apply on resale.
+  const royPer = candyMachine ? 0 : (priceNum * royaltyBps) / 10000;
   const perItem = priceNum + feePer + royPer;
   const totalNum = perItem * clampedQty;
   const reveal = revealLabel(revealAt);
@@ -169,17 +214,36 @@ function Inner({
             lines: [
               { label: `Price × ${clampedQty}`, value: `${(priceNum * clampedQty).toFixed(4)} SOL` },
               { label: "Marketplace fee (2.0%)", value: `${(feePer * clampedQty).toFixed(4)} SOL`, muted: true },
-              ...(royaltyBps ? [{ label: `Creator royalty (${(royaltyBps / 100).toFixed(1)}%)`, value: `${(royPer * clampedQty).toFixed(4)} SOL`, muted: true }] : []),
+              ...(royPer ? [{ label: `Creator royalty (${(royaltyBps / 100).toFixed(1)}%)`, value: `${(royPer * clampedQty).toFixed(4)} SOL`, muted: true }] : []),
               ...(reveal ? [{ label: "Reveal", value: reveal, muted: true }] : []),
             ],
             total: { label: "You pay", value: `${totalNum.toFixed(4)} SOL` },
             fiatUsd: solUsd ? totalNum * solUsd : null,
             balanceSol: balanceLamports != null ? Number(balanceLamports) / 1e9 : null,
             needSol: totalNum,
-            stages: BUY_STEPS,
-            // Mint the first `clampedQty` available editions in sequence (settlement is one tx each).
+            stages: candyMachine ? candyMintSteps(candyMachine.allowlist !== null) : BUY_STEPS,
+            // Either way, one transaction per item — a candy machine mints one asset per `mintV1`,
+            // and a listing purchase settles one listing per transaction.
             perform: async (onStage) => {
               let last: { signature: string } | undefined;
+              if (candyMachine) {
+                for (let i = 0; i < clampedQty; i += 1) {
+                  last = await mintFromCandyMachine({
+                    supabase,
+                    umi,
+                    collectionId: candyMachine.collectionId,
+                    candyMachine: candyMachine.candyMachine,
+                    candyGuard: candyMachine.candyGuard,
+                    collectionAddress: candyMachine.collectionAddress,
+                    creatorWallet: candyMachine.creatorWallet,
+                    treasuryWallet: candyMachine.treasuryWallet,
+                    guardLabel: candyMachine.guardLabel,
+                    allowlist: candyMachine.allowlist,
+                    onStage: (s) => onStage(s),
+                  });
+                }
+                return last ?? {};
+              }
               for (const listingId of availableListingIds.slice(0, clampedQty)) {
                 last = await buyListing({ supabase, umi, listingId, onStage: onStage as (s: string) => void });
               }
@@ -188,7 +252,9 @@ function Inner({
             successTitle: clampedQty > 1 ? `Minted ${clampedQty} items` : "Mint confirmed",
             successDetail: reveal ? `${reveal}.` : undefined,
             explorerUrl: explorerTxUrl,
-            errorHint: "If your wallet never prompted or you rejected it, no SOL left your wallet.",
+            errorHint: candyMachine
+              ? "If your wallet never prompted or you rejected it, no SOL left your wallet. If it minted but recording failed, the item is already yours on chain — reload to see it."
+              : "If your wallet never prompted or you rejected it, no SOL left your wallet.",
           }}
         />
       )}

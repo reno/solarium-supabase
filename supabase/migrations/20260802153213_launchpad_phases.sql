@@ -2,11 +2,14 @@
 -- launchpad: the creator pre-mints the supply (existing mint flow), and buyers "mint" =
 -- buy the next available edition at the current phase's price during that phase's window.
 --
--- NOTE on enforcement: the intended trustless path (Metaplex Core Candy Machine) is
--- incompatible with this project's umi 1.5.1 (the CM package peers umi <= 1), so phase
--- windows, per-wallet limits, and allowlists are enforced at the app/DB layer (advisory).
--- The schema is deliberately shaped so a future umi-compatible Candy Machine — or a
--- deliberately-introduced mint authority — can take over enforcement without a rewrite.
+-- NOTE on enforcement: phase windows, per-wallet limits and allowlists are advisory on this
+-- path — enforced at the app/DB layer, since a pre-minted, listing-backed drop has no on-chain
+-- rule to break. The schema is deliberately shaped so a Candy Machine can take over enforcement
+-- without a rewrite, and 20260807120000_candy_machine.sql does exactly that.
+--
+-- (An earlier version of this note claimed the Core Candy Machine was unusable here because its
+-- package peers `umi >= 0.8.2 <= 1` against this project's umi 1.5.1. That was wrong: a peer
+-- range is advisory, not a runtime incompatibility. See the later migration for the correction.)
 
 create table public.mint_phases (
   id uuid primary key default gen_random_uuid(),

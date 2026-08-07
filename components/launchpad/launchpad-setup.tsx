@@ -21,7 +21,16 @@ const FIELD_LABEL: React.CSSProperties = {
   marginBottom: "var(--space-3)",
 };
 
-export function LaunchpadSetup({ collections, userId }: { collections: SetupCollection[]; userId: string }) {
+export function LaunchpadSetup({
+  collections,
+  userId,
+  onChainDrop = false,
+}: {
+  collections: SetupCollection[];
+  userId: string;
+  /** True when a candy machine enforces this drop — its price is a guard, not a listing. */
+  onChainDrop?: boolean;
+}) {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const [collectionId, setCollectionId] = useState(collections[0]?.id ?? "");
@@ -77,7 +86,7 @@ export function LaunchpadSetup({ collections, userId }: { collections: SetupColl
       // listing, so unless the listings move too the drop advertises a price it won't honour.
       // Done after the phase exists, so a failed phase never leaves prices rewritten.
       let repriced = 0;
-      if (repriceListed && priceLamports > 0n) {
+      if (repriceListed && !onChainDrop && priceLamports > 0n) {
         const { data: mine } = await supabase
           .from("nfts")
           .select("id")
@@ -154,15 +163,18 @@ export function LaunchpadSetup({ collections, userId }: { collections: SetupColl
       </div>
       <div style={{ marginTop: "var(--space-7)", display: "flex", alignItems: "center", gap: "var(--space-7)", flexWrap: "wrap" }}>
         <Button variant="primary" icon="plus" loading={busy} disabled={busy} onClick={addPhase}>Add phase</Button>
-        <Switch
-          checked={repriceListed}
-          onChange={() => setRepriceListed((v) => !v)}
-          label="Reprice my listed items to this price"
-        />
+        {!onChainDrop && (
+          <Switch
+            checked={repriceListed}
+            onChange={() => setRepriceListed((v) => !v)}
+            label="Reprice my listed items to this price"
+          />
+        )}
       </div>
       <p style={{ margin: "var(--space-4) 0 0", fontSize: "var(--text-2xs)", color: "var(--text-tertiary)" }}>
-        Buyers pay each item&apos;s listing price, not the phase price — leave this on to keep them in step.
-        No wallet signature needed; the price is off-chain.
+        {onChainDrop
+          ? "This phase is only a draft until it is deployed to the candy machine — the guards keep enforcing the phases you last deployed."
+          : "Buyers pay each item’s listing price, not the phase price — leave this on to keep them in step. No wallet signature needed; the price is off-chain."}
       </p>
 
       <div style={{ marginTop: "var(--space-9)", paddingTop: "var(--space-7)", borderTop: "1px solid var(--border-subtle)" }}>

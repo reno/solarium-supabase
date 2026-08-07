@@ -9,6 +9,8 @@ export type RawPhase = {
   per_wallet_limit: number | null;
   allowlist_only: boolean;
   position: number;
+  /** Set once this phase has been deployed as a Candy Guard group. Null on listing-backed drops. */
+  guard_label?: string | null;
 };
 
 export type PhaseStatus = "upcoming" | "live" | "ended";
@@ -23,6 +25,10 @@ export type Phase = {
   perWalletLimit: number | null;
   allowlistOnly: boolean;
   status: PhaseStatus;
+  /** The Candy Guard group to mint through, or null when this phase isn't on chain. */
+  guardLabel: string | null;
+  /** Position within the drop — doubles as the phase's mintLimit counter id on chain. */
+  position: number;
 };
 
 export type PhaseView = {
@@ -51,6 +57,8 @@ export function resolvePhases(raw: RawPhase[]): PhaseView {
         perWalletLimit: p.per_wallet_limit,
         allowlistOnly: p.allowlist_only,
         status,
+        guardLabel: p.guard_label ?? null,
+        position: p.position,
       };
     });
 
