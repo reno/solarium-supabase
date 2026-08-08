@@ -73,7 +73,7 @@ export function TrendingTable({ rows }: { rows: TrendingEntry[] }) {
             listed={r.listed}
             owners={r.owners}
             series={r.series}
-            onClick={() => router.push(`/series/${r.collectionId}`)}
+            onClick={() => router.push(`/collections/${r.collectionId}`)}
             style={i === sorted.length - 1 ? { borderBottom: "none" } : undefined}
           />
         ))}

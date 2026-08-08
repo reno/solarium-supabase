@@ -73,7 +73,7 @@ export function GlobalSearch() {
           type: "collection",
           id: c.id,
           name: c.name,
-          href: `/series/${c.id}`,
+          href: `/collections/${c.id}`,
         });
       });
 

@@ -7,10 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run",
-    "seed:e2e": "node scripts/seed-e2e.mjs",
-    "seed:onchain": "SEED_ONCHAIN=1 vitest run scripts/seed-onchain.e2e.test.ts",
-    "test:candy": "CANDY_E2E=1 vitest run scripts/candy-machine.e2e.test.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "@metaplex-foundation/mpl-core": "^1.10.0",

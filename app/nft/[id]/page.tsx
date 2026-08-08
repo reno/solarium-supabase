@@ -3,11 +3,11 @@ import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
 import { FloorChartCard } from "@/components/charts/floor-chart-card";
-import { ActivityRow, AddressChip, ArtTile, Badge, Card, DepthChart, PriceDisplay, RarityBadge, RarityDistribution } from "@/components/design";
+import { ActivityRow, AddressChip, ArtTile, Badge, Card, DepthChart, PriceDisplay, RarityBadge } from "@/components/design";
 import { Countdown } from "@/components/launchpad/countdown";
 import { TabPanels } from "@/components/tab-panels";
 import { activeListing as findActiveListing, isUnrevealed } from "@/lib/listings/active";
-import { orderBook, rarityBuckets } from "@/lib/viz/item-viz";
+import { orderBook } from "@/lib/viz/item-viz";
 import { BuyButton } from "@/components/listings/buy-button";
 import { OwnedNftControls } from "@/components/listings/my-nft-card";
 import { BidButton } from "@/components/offers/bid-button";
@@ -44,7 +44,7 @@ export default async function NftDetailPage({
   const { data: row } = await supabase
     .from("nfts")
     .select(
-      "id, name, description, image_url, asset_address, edition_number, collection_id, owner_id, rarity_rank, rarity_total, traits, collections(name, collection_address, royalty_bps, reveal_at, creator_id), creator:profiles!nfts_creator_id_fkey(username, wallet_address), owner:profiles!nfts_owner_id_fkey(username, wallet_address), listings(id, price_lamports, status, seller_id, expires_at)"
+      "id, name, description, image_url, asset_address, item_number, collection_id, owner_id, rarity_rank, rarity_total, traits, collections(name, collection_address, royalty_bps, reveal_at, creator_id), creator:profiles!nfts_creator_id_fkey(username, wallet_address), owner:profiles!nfts_owner_id_fkey(username, wallet_address), listings(id, price_lamports, status, seller_id, expires_at)"
     )
     .eq("id", id)
     .maybeSingle();
@@ -131,7 +131,6 @@ export default async function NftDetailPage({
   const depth = orderBook(askPrices, bidPrices);
   const collectionFloorSol = askPrices.length ? String(Math.min(...askPrices)) : null;
   const solUsd = await getSolUsd();
-  const rarity = rarityBuckets(row.id, row.rarity_rank, row.rarity_total ?? 8192);
 
   const details: Array<[string, React.ReactNode]> = [
     [
@@ -159,7 +158,7 @@ export default async function NftDetailPage({
     ["Token standard", "Metaplex Core"],
     ["Chain", `Solana · ${getCluster()}`],
     ...(collection ? ([["Creator royalty", `${(royaltyBps / 100).toFixed(1)}%`]] as Array<[string, React.ReactNode]>) : []),
-    ...(row.edition_number != null ? ([["Item number", `#${row.edition_number}`]] as Array<[string, React.ReactNode]>) : []),
+    ...(row.item_number != null ? ([["Item number", `#${row.item_number}`]] as Array<[string, React.ReactNode]>) : []),
   ];
 
   return (
@@ -177,13 +176,12 @@ export default async function NftDetailPage({
                 </div>
               ) : null}
             </ArtTile>
-            {collection && (
+            {collection && row.rarity_rank != null && (
               <Card padding="var(--space-7)">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-6)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={LABEL}>Rarity</span>
-                  <RarityBadge rank={row.rarity_rank ?? "—"} total={row.rarity_total ?? undefined} />
+                  <RarityBadge rank={row.rarity_rank} total={row.rarity_total ?? undefined} />
                 </div>
-                <RarityDistribution buckets={rarity.buckets} highlight={rarity.highlight} height={72} />
               </Card>
             )}
           </div>
@@ -191,7 +189,7 @@ export default async function NftDetailPage({
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-7)" }}>
             <div>
               {collection && (
-                <Link href={`/series/${row.collection_id}`} style={{ fontSize: "var(--text-md)", color: "var(--text-secondary)" }}>
+                <Link href={`/collections/${row.collection_id}`} style={{ fontSize: "var(--text-md)", color: "var(--text-secondary)" }}>
                   {collection.name}
                 </Link>
               )}

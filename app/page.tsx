@@ -15,7 +15,6 @@ type CollectionRow = {
   cover_url: string | null;
   creator_id: string;
   verified: boolean;
-  stat_sparkline: number[] | null;
   created_at: string;
 };
 type NftRow = { id: string; collection_id: string | null; owner_id: string | null; listings: { price_lamports: string | number; status: string }[] | null };
@@ -38,7 +37,7 @@ export default async function Home() {
   const supabase = await createClient();
 
   const [collectionsRes, nftsRes, recentListingsRes, activitiesRes, listingCountRes, salesRes, marketStatsRes] = await Promise.all([
-    supabase.from("collections").select("id, name, cover_url, creator_id, verified, stat_sparkline, created_at"),
+    supabase.from("collections").select("id, name, cover_url, creator_id, verified, created_at"),
     supabase.from("nfts").select("id, collection_id, owner_id, listings(price_lamports, status)"),
     supabase
       .from("listings")
@@ -53,7 +52,7 @@ export default async function Home() {
       .limit(7),
     supabase.from("listings").select("id", { count: "exact", head: true }).eq("status", "active"),
     supabase.from("activities").select("lamports").eq("type", "sale"),
-    supabase.from("collection_market_stats").select("collection_id, volume_all, volume_24h, volume_prev_24h, volume_7d, volume_30d, sales_count"),
+    supabase.from("collection_market_stats").select("collection_id, volume_all, volume_24h, volume_prev_24h, volume_7d, volume_30d, sales_count, sparkline"),
   ]);
 
   type MarketStatsRow = {
@@ -64,9 +63,10 @@ export default async function Home() {
     volume_7d: string | number;
     volume_30d: string | number;
     sales_count: string | number;
+    sparkline: number[] | null;
   };
 
-  const win = new Map<string, { v24: number; v7d: number; v30: number; volAll: bigint; sales: number; bps: number | null }>();
+  const win = new Map<string, { v24: number; v7d: number; v30: number; volAll: bigint; sales: number; bps: number | null; sparkline: number[] }>();
   for (const m of (marketStatsRes.data ?? []) as MarketStatsRow[]) {
     win.set(m.collection_id, {
       v24: Number(m.volume_24h) / 1e9,
@@ -75,6 +75,7 @@ export default async function Home() {
       volAll: BigInt(String(m.volume_all)),
       sales: Number(m.sales_count),
       bps: deltaBps(BigInt(String(m.volume_24h)), BigInt(String(m.volume_prev_24h))),
+      sparkline: Array.isArray(m.sparkline) ? m.sparkline : [],
     });
   }
 
@@ -119,7 +120,7 @@ export default async function Home() {
         delta: deltaLabel(w?.bps ?? null),
         listed: a.total ? `${((a.listed / a.total) * 100).toFixed(1)}%` : "—",
         owners: a.owners.size.toLocaleString("en-US"),
-        series: traded && Array.isArray(c.stat_sparkline) ? c.stat_sparkline : [],
+        series: traded ? (w?.sparkline ?? []) : [],
         vol24: w?.v24 ?? 0,
         vol7d: w?.v7d ?? 0,
         vol30: w?.v30 ?? 0,
@@ -178,7 +179,7 @@ export default async function Home() {
             Live listings across every collection. Sweep the floor, place bids, and settle in one transaction.
           </p>
           <div style={{ display: "flex", gap: "var(--space-5)", marginTop: "var(--space-8)" }}>
-            <Link href={trending[0] ? `/series/${trending[0].collectionId}` : "/launchpad"} style={{ textDecoration: "none" }}>
+            <Link href={trending[0] ? `/collections/${trending[0].collectionId}` : "/launchpad"} style={{ textDecoration: "none" }}>
               <Button variant="primary" icon="zap">Start trading</Button>
             </Link>
             <Link href="/launchpad" style={{ textDecoration: "none" }}>

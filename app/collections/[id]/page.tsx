@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { BackLink } from "@/components/back-link";
 import { FloorChartCard } from "@/components/charts/floor-chart-card";
 import { ArtTile, Badge, Card, CollectionStatsBar, Icon, type TraitGroup } from "@/components/design";
-import { CollectionBrowser, type BrowserEdition } from "@/components/collections/collection-browser";
+import { CollectionBrowser, type BrowserItem } from "@/components/collections/collection-browser";
 import { CollectionOfferButton } from "@/components/offers/collection-offer-button";
 import { toFeedItem, type RawActivity } from "@/lib/activities/feed";
 import { shortWallet } from "@/lib/format/wallet";
@@ -16,7 +16,7 @@ type NftRow = {
   id: string;
   name: string;
   image_url: string;
-  edition_number: number | null;
+  item_number: number | null;
   owner_id: string | null;
   rarity_rank: number | null;
   rarity_total: number | null;
@@ -24,7 +24,7 @@ type NftRow = {
   listings: { id: string; price_lamports: string | number; status: string }[] | null;
 };
 
-export default async function SeriesDetailPage({
+export default async function CollectionDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -54,9 +54,9 @@ export default async function SeriesDetailPage({
 
   const { data: nftRows } = await supabase
     .from("nfts")
-    .select("id, name, image_url, edition_number, owner_id, rarity_rank, rarity_total, traits, listings(id, price_lamports, status)")
+    .select("id, name, image_url, item_number, owner_id, rarity_rank, rarity_total, traits, listings(id, price_lamports, status)")
     .eq("collection_id", id)
-    .order("edition_number", { ascending: true });
+    .order("item_number", { ascending: true });
   const rows = (nftRows ?? []) as NftRow[];
   const nftIds = rows.map((r) => r.id);
 
@@ -102,7 +102,7 @@ export default async function SeriesDetailPage({
       .limit(20),
   ]);
 
-  const editions: BrowserEdition[] = rows.map((row) => {
+  const items: BrowserItem[] = rows.map((row) => {
     const active = (row.listings ?? []).find((l) => l.status === "active");
     return {
       id: row.id,
@@ -119,7 +119,7 @@ export default async function SeriesDetailPage({
   });
 
   const traitMap = new Map<string, Map<string, number>>();
-  for (const e of editions)
+  for (const e of items)
     for (const tr of e.traits) {
       if (!traitMap.has(tr.trait)) traitMap.set(tr.trait, new Map());
       const vm = traitMap.get(tr.trait)!;
@@ -173,7 +173,7 @@ export default async function SeriesDetailPage({
   });
   const collectionOffers = [...collLevelOffers, ...itemOffers];
 
-  const activePrices = editions.filter((e) => e.priceSol).map((e) => parseFloat(e.priceSol!));
+  const activePrices = items.filter((e) => e.priceSol).map((e) => parseFloat(e.priceSol!));
   const floor = activePrices.length ? Math.min(...activePrices) : null;
   const listedCount = activePrices.length;
   const ownerCount = new Set(rows.map((r) => r.owner_id).filter(Boolean)).size;
@@ -191,7 +191,7 @@ export default async function SeriesDetailPage({
     { label: "Top bid", value: topBid != null ? `${topBid.toFixed(2)} SOL` : "—" },
     { label: "24h volume", value: vol24h > 0 ? `${vol24h.toFixed(1)} SOL` : "—" },
     { label: "7d volume", value: vol7d > 0 ? `${vol7d.toFixed(1)} SOL` : "—" },
-    { label: "Listed", value: `${listedCount}`, sub: `of ${editions.length}` },
+    { label: "Listed", value: `${listedCount}`, sub: `of ${items.length}` },
     { label: "Owners", value: `${ownerCount}` },
     { label: "Royalty", value: `${((collection.royalty_bps ?? 0) / 100).toFixed(1)}%` },
   ];
@@ -218,7 +218,7 @@ export default async function SeriesDetailPage({
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-5)" }}>
               <h1 style={{ font: "var(--type-h1)", letterSpacing: "var(--tracking-heading)", color: "var(--text-primary)", margin: 0 }}>{collection.name}</h1>
               {collection.verified && <Icon name="badge-check" size={18} color="var(--accent-2)" />}
-              <Badge tone="neutral" mono>{editions.length} items</Badge>
+              <Badge tone="neutral" mono>{items.length} items</Badge>
             </div>
             <p style={{ margin: "var(--space-4) 0 0", fontSize: "var(--text-md)", color: "var(--text-secondary)" }}>
               by{" "}
@@ -248,10 +248,10 @@ export default async function SeriesDetailPage({
           </Card>
         )}
 
-        {editions.length === 0 ? (
+        {items.length === 0 ? (
           <p style={{ margin: "var(--space-9) 0 0", fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>No items in this collection.</p>
         ) : (
-          <CollectionBrowser editions={editions} traitGroups={traitGroups} activity={feed} offersCount={(offersCountRes.count ?? 0) + collLevelOffers.length} collectionOffers={collectionOffers} collectionName={collection.name} royaltyBps={collection.royalty_bps ?? 0} solUsd={solUsd} />
+          <CollectionBrowser items={items} traitGroups={traitGroups} activity={feed} offersCount={(offersCountRes.count ?? 0) + collLevelOffers.length} collectionOffers={collectionOffers} collectionName={collection.name} royaltyBps={collection.royalty_bps ?? 0} solUsd={solUsd} />
         )}
       </div>
     </main>

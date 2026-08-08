@@ -308,12 +308,6 @@ async function walletOf(admin: Admin, userId: string): Promise<string | null> {
   return data?.wallet_address ?? null;
 }
 
-async function refreshCollectionStats(admin: Admin, collectionId: string | null): Promise<void> {
-  if (!collectionId) return;
-  const { error } = await admin.rpc("refresh_collection_stats", { p_collection: collectionId });
-  if (error) console.error(`refresh_collection_stats(${collectionId}) failed: ${error.message}`);
-}
-
 type ListingRow = {
   id: string;
   status: string;
@@ -406,7 +400,6 @@ async function confirm(admin: Admin, userId: string, listingId: string, signatur
     lamports: price.toString(),
     tx_signature: signature,
   });
-  await refreshCollectionStats(admin, listing.nft.collection_id);
   return json(200, { ok: true });
 }
 
@@ -569,7 +562,6 @@ async function confirmOffer(admin: Admin, userId: string, offerId: string, signa
     lamports: price.toString(),
     tx_signature: signature,
   });
-  await refreshCollectionStats(admin, offer.nft.collection_id ?? offer.collection_id);
   return json(200, { ok: true });
 }
 

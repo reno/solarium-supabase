@@ -20,7 +20,7 @@ import {
 import { SweepBuyButton } from "@/components/listings/sweep-buy-button";
 import type { FeedItem } from "@/lib/activities/feed";
 
-export type BrowserEdition = {
+export type BrowserItem = {
   id: string;
   name: string;
   imageUrl: string;
@@ -57,7 +57,7 @@ function timeUntil(iso: string): string {
 }
 
 export function CollectionBrowser({
-  editions,
+  items,
   traitGroups,
   activity,
   offersCount,
@@ -66,7 +66,7 @@ export function CollectionBrowser({
   royaltyBps = 0,
   solUsd,
 }: {
-  editions: BrowserEdition[];
+  items: BrowserItem[];
   traitGroups: TraitGroup[];
   activity: FeedItem[];
   offersCount: number;
@@ -95,7 +95,7 @@ export function CollectionBrowser({
   const shown = useMemo(() => {
     const min = priceRange.min ? parseFloat(priceRange.min) : null;
     const max = priceRange.max ? parseFloat(priceRange.max) : null;
-    const filtered = editions.filter((e) => {
+    const filtered = items.filter((e) => {
       if (buyNow && !e.listed) return false;
       const price = e.priceSol ? parseFloat(e.priceSol) : null;
       if (min != null && (price == null || price < min)) return false;
@@ -106,17 +106,17 @@ export function CollectionBrowser({
       }
       return true;
     });
-    const pAsc = (e: BrowserEdition) => (e.priceSol != null ? parseFloat(e.priceSol) : Infinity);
-    const pDesc = (e: BrowserEdition) => (e.priceSol != null ? parseFloat(e.priceSol) : -Infinity);
+    const pAsc = (e: BrowserItem) => (e.priceSol != null ? parseFloat(e.priceSol) : Infinity);
+    const pDesc = (e: BrowserItem) => (e.priceSol != null ? parseFloat(e.priceSol) : -Infinity);
     const arr = [...filtered];
     if (sort === "Price low → high") arr.sort((a, b) => pAsc(a) - pAsc(b));
     else if (sort === "Price high → low") arr.sort((a, b) => pDesc(b) - pDesc(a));
     else if (sort === "Rarity") arr.sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity));
     else if (sort === "Recently listed") arr.sort((a, b) => Number(b.listed) - Number(a.listed));
     return arr;
-  }, [editions, selected, buyNow, priceRange, sort]);
+  }, [items, selected, buyNow, priceRange, sort]);
 
-  const buyable = (e: BrowserEdition) => !!e.priceSol && !e.ownedByViewer;
+  const buyable = (e: BrowserItem) => !!e.priceSol && !e.ownedByViewer;
   const sweepItems = shown.filter((e) => sweep.includes(e.id) && buyable(e));
   const sweepTotal = sweepItems.reduce((a, e) => a + parseFloat(e.priceSol!), 0);
   const toggleSweep = (idv: string) => setSweep((s) => (s.includes(idv) ? s.filter((x) => x !== idv) : [...s, idv]));

@@ -35,7 +35,7 @@ export async function SiteHeader() {
   const links = [
     { href: "/", label: "Explore" },
     { href: "/launchpad", label: "Launchpad" },
-    ...(menuUser ? [{ href: "/collection", label: "Portfolio" }, { href: "/creator", label: "Creator" }] : []),
+    ...(menuUser ? [{ href: "/portfolio", label: "Portfolio" }, { href: "/creator", label: "Creator" }] : []),
   ];
 
   return (

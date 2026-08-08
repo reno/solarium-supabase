@@ -1,26 +1,9 @@
 import type { Umi } from "@metaplex-foundation/umi";
 import { base58, base64 } from "@metaplex-foundation/umi/serializers";
-import { FunctionsHttpError } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { invokeSettle } from "@/lib/settle/invoke";
 import { withRpcRetry } from "@/lib/solana/retry";
-
-async function invokeSettle(
-  supabase: SupabaseClient,
-  body: Record<string, string>
-): Promise<Record<string, string>> {
-  const { data, error } = await supabase.functions.invoke("settle", { body });
-  if (error) {
-    if (error instanceof FunctionsHttpError) {
-      const details = await error.context
-        .json()
-        .catch(() => null as { error?: string } | null);
-      throw new Error(details?.error ?? "Settlement request failed.");
-    }
-    throw error;
-  }
-  return data;
-}
 
 export type BuyStage = "preparing" | "signing" | "sending" | "confirming" | "recording";
 

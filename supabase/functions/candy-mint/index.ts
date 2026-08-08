@@ -51,14 +51,27 @@ function itemNumberFromName(name: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
-async function imageFromMetadata(uri: string): Promise<string | null> {
+type ItemMetadata = { image: string | null; traits: { trait: string; value: string }[] };
+
+// The item's metadata JSON is the only place its artwork and attributes exist — the config line
+// carries just a URI. Traits are what recompute_collection_rarity ranks, so a drop that ships
+// per-item attributes gets real rarity; one that doesn't gets an empty array and a null rank,
+// which is the honest answer rather than a rank derived from nothing.
+async function readMetadata(uri: string): Promise<ItemMetadata> {
   try {
     const response = await fetch(uri);
-    if (!response.ok) return null;
+    if (!response.ok) return { image: null, traits: [] };
     const metadata = await response.json();
-    return typeof metadata?.image === "string" ? metadata.image : null;
+    const attributes = Array.isArray(metadata?.attributes) ? metadata.attributes : [];
+    const traits = attributes
+      .map((a: { trait_type?: unknown; trait?: unknown; value?: unknown }) => ({
+        trait: String(a?.trait_type ?? a?.trait ?? ""),
+        value: String(a?.value ?? ""),
+      }))
+      .filter((t: { trait: string; value: string }) => t.trait !== "" && t.value !== "");
+    return { image: typeof metadata?.image === "string" ? metadata.image : null, traits };
   } catch {
-    return null;
+    return { image: null, traits: [] };
   }
 }
 
@@ -136,7 +149,8 @@ async function recordMint(
       ? BigInt(tx.meta.postBalances[creatorIndex]) - BigInt(tx.meta.preBalances[creatorIndex])
       : 0n;
 
-  const imageUrl = (await imageFromMetadata(asset.uri)) ?? collection.cover_url;
+  const metadata = await readMetadata(asset.uri);
+  const imageUrl = metadata.image ?? collection.cover_url;
   if (!imageUrl) return json(409, { error: "That item has no artwork to record." });
 
   const { data: nft, error: insertError } = await admin
@@ -151,7 +165,8 @@ async function recordMint(
       description: collection.description,
       image_url: imageUrl,
       metadata_url: asset.uri,
-      edition_number: itemNumberFromName(asset.name),
+      item_number: itemNumberFromName(asset.name),
+      traits: metadata.traits,
       mint_tx: signature,
     })
     .select("id")
@@ -172,6 +187,12 @@ async function recordMint(
     lamports: paid > 0n ? paid.toString() : null,
     tx_signature: signature,
   });
+
+  // Rarity is relative to the rest of the collection, so it is re-ranked as each item lands.
+  if (metadata.traits.length > 0) {
+    const { error: rarityError } = await admin.rpc("recompute_collection_rarity", { p_collection: collection.id });
+    if (rarityError) console.error(`recompute_collection_rarity(${collection.id}) failed: ${rarityError.message}`);
+  }
 
   const { count } = await admin
     .from("nfts")

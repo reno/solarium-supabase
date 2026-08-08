@@ -3,22 +3,18 @@ import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
 import { ArtTile, Badge, Button, Card, Icon } from "@/components/design";
-import { BulkListButton } from "@/components/launchpad/bulk-list-button";
 import { CandyMachinePanel, type SerializedPhase } from "@/components/launchpad/candy-machine-panel";
 import { CandyMintButton } from "@/components/launchpad/candy-mint-button";
 import { Countdown } from "@/components/launchpad/countdown";
 import { BalanceEligibilityLine } from "@/components/launchpad/mint-eligibility";
-import { LaunchpadMintButton } from "@/components/launchpad/launchpad-mint-button";
 import { RemindMe } from "@/components/launchpad/remind-me";
 import { LaunchpadSetup } from "@/components/launchpad/launchpad-setup";
-import { MyNftCard, type OwnedNft } from "@/components/listings/my-nft-card";
 import { OffersList } from "@/components/offers/offers-list";
 import { mapCollectionOffers, mapOffers, type OfferEntry, type RawCollectionOffer, type RawOffer } from "@/lib/offers/map";
 import { serverNow } from "@/lib/format/relative-time";
 import { shortWallet } from "@/lib/format/wallet";
 import { countdownTarget, resolvePhases, type RawPhase } from "@/lib/launchpad/launchpad";
 import { getSolUsd } from "@/lib/price/sol";
-import { lamportsToSol } from "@/lib/solana/lamports";
 import { createClient } from "@/lib/supabase/server";
 
 type RawCandyMachine = {
@@ -61,13 +57,13 @@ export default async function LaunchpadDetailPage({
     .maybeSingle();
   if (!collection) notFound();
 
-  const [phasesResult, editionsResult, viewerProfileResult, machineResult, allowlistResult] = await Promise.all([
+  const [phasesResult, itemsResult, viewerProfileResult, machineResult, allowlistResult] = await Promise.all([
     supabase.from("mint_phases").select("*").eq("collection_id", id),
     supabase
       .from("nfts")
-      .select("id, name, image_url, asset_address, edition_number, owner_id, listings(id, price_lamports, status, seller_id, buyer_id)")
+      .select("id, name, image_url, asset_address, item_number, owner_id, listings(id, price_lamports, status, seller_id, buyer_id)")
       .eq("collection_id", id)
-      .order("edition_number", { ascending: true }),
+      .order("item_number", { ascending: true }),
     user ? supabase.from("profiles").select("wallet_address").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
     supabase.from("candy_machines").select("*").eq("collection_id", id).maybeSingle(),
     supabase.from("launchpad_allowlist").select("wallet_address").eq("collection_id", id),
@@ -107,29 +103,12 @@ export default async function LaunchpadDetailPage({
     : null;
   const allowlist = (allowlistResult.data ?? []).map((a: { wallet_address: string }) => a.wallet_address);
 
-  const editions = editionsResult.data ?? [];
-  const total = machine ? machine.itemsAvailable : editions.length;
-  const minted = machine
-    ? machine.itemsRedeemed
-    : editions.filter((e) => e.owner_id && e.owner_id !== collection.creator_id).length;
+  // Items only exist once buyers mint them out of the candy machine, so supply comes from the
+  // machine's own counters. A collection without one has nothing to mint yet.
+  const items = itemsResult.data ?? [];
+  const total = machine?.itemsAvailable ?? 0;
+  const minted = machine?.itemsRedeemed ?? 0;
   const pct = total ? Math.round((minted / total) * 100) : 0;
-
-  let nextListingId: string | null = null;
-  let nextPriceSol: string | null = null;
-  const availableListingIds: string[] = [];
-  let creatorHeld = 0;
-  for (const e of editions) {
-    if (e.owner_id !== collection.creator_id) continue;
-    creatorHeld += 1;
-    const activeL = (e.listings ?? []).find((l: { status: string }) => l.status === "active");
-    if (activeL) {
-      availableListingIds.push(activeL.id);
-      if (nextListingId === null) {
-        nextListingId = activeL.id;
-        nextPriceSol = lamportsToSol(BigInt(String(activeL.price_lamports)));
-      }
-    }
-  }
 
   let viewerMintCount = 0;
   if (viewerId && machine) {
@@ -140,11 +119,6 @@ export default async function LaunchpadDetailPage({
       .eq("actor_id", viewerId)
       .eq("nft.collection_id", id);
     viewerMintCount = count ?? 0;
-  } else if (viewerId) {
-    viewerMintCount = editions.reduce(
-      (n, e) => n + (e.listings ?? []).filter((l: { status: string; buyer_id: string | null }) => l.status === "sold" && l.buyer_id === viewerId).length,
-      0
-    );
   }
 
   const viewerWallet = viewerProfileResult.data?.wallet_address ?? null;
@@ -161,23 +135,25 @@ export default async function LaunchpadDetailPage({
   }
 
   const candyAvailable = machine ? Math.max(0, Math.min(machine.itemsLoaded, machine.itemsAvailable) - machine.itemsRedeemed) : 0;
-  const nothingListed = machine ? candyAvailable === 0 && machine.itemsLoaded < machine.itemsAvailable : !nextListingId && creatorHeld > 0;
+  // No machine deployed, or one whose config lines aren't fully loaded: there is nothing a
+  // buyer could mint even while a phase window is open.
+  const notOpenYet = machine ? candyAvailable === 0 && machine.itemsLoaded < machine.itemsAvailable : true;
 
   let disabledReason: string | null = null;
   if (!active || active.status !== "live") disabledReason = "Mint not live";
   else if (viewerId === collection.creator_id) disabledReason = "You're the creator";
   else if (active.allowlistOnly && !allowlisted) disabledReason = "Allowlist only";
   else if (active.perWalletLimit != null && viewerMintCount >= active.perWalletLimit) disabledReason = "Wallet limit reached";
-  else if (nothingListed) disabledReason = machine ? "Not loaded yet" : "Not listed yet";
-  else if (machine ? candyAvailable === 0 : !nextListingId) disabledReason = machine ? "Minted out" : "Sold out";
+  else if (notOpenYet) disabledReason = "Not loaded yet";
+  else if (candyAvailable === 0) disabledReason = "Minted out";
 
   const target = countdownTarget(active);
   const now = serverNow();
-  const headlinePrice = machine ? (active?.priceSol ?? "—") : (nextPriceSol ?? active?.priceSol ?? "—");
+  const headlinePrice = active?.priceSol ?? "—";
   const solUsd = await getSolUsd();
 
   type PanelState = "draft" | "live" | "upcoming" | "unlisted" | "soldout" | "ended";
-  const hasSupplyToMint = machine ? candyAvailable > 0 : Boolean(nextListingId);
+  const hasSupplyToMint = candyAvailable > 0;
   const panelState: PanelState = isDraft
     ? "draft"
     : !active || active.status === "ended"
@@ -186,7 +162,7 @@ export default async function LaunchpadDetailPage({
         ? "upcoming"
         : hasSupplyToMint
           ? "live"
-          : nothingListed
+          : notOpenYet
             ? "unlisted"
             : "soldout";
   const stateBadge: Record<PanelState, { tone: "live" | "neutral" | "accent"; label: string }> = {
@@ -201,34 +177,16 @@ export default async function LaunchpadDetailPage({
     ? new Date(active.startsAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
     : null;
 
-  const creatorEditions: OwnedNft[] = isCreator
-    ? editions
-        .filter((e) => e.owner_id === collection.creator_id)
-        .map((e) => {
-          const al = (e.listings ?? []).find((l: { status: string }) => l.status === "active");
-          return {
-            id: e.id,
-            name: e.name,
-            imageUrl: e.image_url,
-            assetAddress: e.asset_address,
-            collectionId: id,
-            collectionAddress: collection.collection_address ?? null,
-            listing: al ? { id: al.id, priceLamports: String(al.price_lamports) } : null,
-          };
-        })
-    : [];
-  const unlistedEditions = creatorEditions.filter((e) => !e.listing);
-
-  const viewerOwnedIds = new Set(viewerId ? editions.filter((e) => e.owner_id === viewerId).map((e) => e.id) : []);
+  const viewerOwnedIds = new Set(viewerId ? items.filter((e) => e.owner_id === viewerId).map((e) => e.id) : []);
   const bindableNftId =
-    editions.find((e) => viewerOwnedIds.has(e.id) && (e.listings ?? []).some((l: { status: string }) => l.status === "active"))?.id ?? null;
+    items.find((e) => viewerOwnedIds.has(e.id) && (e.listings ?? []).some((l: { status: string }) => l.status === "active"))?.id ?? null;
 
   const [itemOffersRes, collectionOffersRes] = viewerOwnedIds.size
     ? await Promise.all([
         supabase
           .from("offers")
           .select("id, nft_id, bidder_id, price_lamports, expires_at, status, accepted_tx, nft:nfts(name, owner_id, listings(status)), bidder:profiles!offers_bidder_id_fkey(username, wallet_address)")
-          .in("nft_id", editions.map((e) => e.id))
+          .in("nft_id", items.map((e) => e.id))
           .in("status", ["active", "accepted"])
           .order("price_lamports", { ascending: false }),
         supabase
@@ -323,8 +281,8 @@ export default async function LaunchpadDetailPage({
                           ? `The phase is open, but only ${machine.itemsLoaded} of ${machine.itemsAvailable} items are loaded into the candy machine — finish loading below.`
                           : "The creator hasn't finished loading this drop's items yet."
                         : isCreator
-                          ? `The phase is open, but none of your ${creatorHeld} items are listed — list them below to start the mint.`
-                          : "The creator hasn't put this drop's items up for mint yet."}
+                          ? "The phase is open, but no candy machine is deployed yet — deploy one below to start the mint."
+                          : "The creator hasn't opened this drop for minting yet."}
                   </span>
                 </div>
               )}
@@ -399,22 +357,10 @@ export default async function LaunchpadDetailPage({
                     revealAt={collection.reveal_at ?? null}
                     solUsd={solUsd}
                   />
-                ) : panelState === "live" ? (
-                  <LaunchpadMintButton
-                    availableListingIds={availableListingIds}
-                    priceSol={headlinePrice}
-                    viewerId={viewerId}
-                    disabledReason={disabledReason}
-                    perWalletRemaining={active?.perWalletLimit != null ? Math.max(0, active.perWalletLimit - viewerMintCount) : null}
-                    phaseName={active?.name ?? null}
-                    royaltyBps={collection.royalty_bps ?? 0}
-                    revealAt={collection.reveal_at ?? null}
-                    solUsd={solUsd}
-                  />
-                ) : panelState === "upcoming" ? (
+                ) : panelState === "live" ? null : panelState === "upcoming" ? (
                   <RemindMe collectionId={id} name={collection.name} />
                 ) : panelState === "draft" || panelState === "unlisted" ? null : (
-                  <Link href={`/series/${id}`} style={{ textDecoration: "none" }}>
+                  <Link href={`/collections/${id}`} style={{ textDecoration: "none" }}>
                     <Button variant="primary" block iconRight="arrow-right">Trade on secondary</Button>
                   </Link>
                 )}
@@ -459,7 +405,7 @@ export default async function LaunchpadDetailPage({
                 <span style={{ fontSize: "var(--text-2xs)", color: "var(--text-tertiary)", textWrap: "pretty" }}>
                   {machine
                     ? "Enforced on chain. Price, mint window, per-wallet limit and allowlist are candy guards — the program rejects a mint that breaks them, whatever any app says."
-                    : "Enforced by Solarium, not by the chain. Phase windows, per-wallet limits and the allowlist are app-level rules applied at settlement, not on-chain guarantees."}
+                    : "Not deployed yet. These phases become candy guards when the creator deploys the candy machine; until then nothing can be minted."}
                 </span>
               </div>
             )}
@@ -485,7 +431,7 @@ export default async function LaunchpadDetailPage({
             <p style={{ font: "var(--type-body-sm)", color: "var(--text-tertiary)", margin: "0 0 var(--space-8)", maxWidth: 620 }}>
               {machine
                 ? "Your phases are enforced on chain by candy guards. Edit them below, then sync so the chain follows — until you do, the guards keep enforcing what you last deployed."
-                : "Deploy a candy machine to have the chain enforce your phases, or list items to run the drop off-chain — listed items mint at their listing price, prefilled to the active phase."}
+                : "Deploy a candy machine to open this drop. Your phases become candy guards, and buyers mint straight from the chain — nothing is minted until they do."}
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.3fr) minmax(0, 1fr)", gap: "var(--space-10)", alignItems: "start" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-9)" }}>
@@ -500,24 +446,9 @@ export default async function LaunchpadDetailPage({
                   phases={serializedPhases}
                   allowlist={allowlist}
                   machine={machine}
-                  hasMintedItems={editions.length > 0}
+                  hasMintedItems={items.length > 0}
                   defaultSupply={supplyParam}
                 />
-                {creatorEditions.length > 0 && (
-                  <div>
-                    <div className="sol-label" style={{ marginBottom: "var(--space-6)" }}>List items</div>
-                    {unlistedEditions.length > 0 && (
-                      <div style={{ marginBottom: "var(--space-7)", padding: "var(--space-6)", borderRadius: "var(--radius-card)", border: "1px solid var(--border-subtle)", background: "var(--surface-inset)" }}>
-                        <BulkListButton nfts={unlistedEditions} userId={viewerId!} defaultPrice={active?.priceSol ?? undefined} />
-                      </div>
-                    )}
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "var(--grid-gap)" }}>
-                      {creatorEditions.map((nft) => (
-                        <MyNftCard key={nft.id} nft={nft} userId={viewerId!} defaultPrice={active?.priceSol ?? undefined} royaltyBps={collection.royalty_bps ?? 0} />
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
               <div>
                 <div className="sol-label" style={{ marginBottom: "var(--space-6)" }}>Mint phases &amp; allowlist</div>
