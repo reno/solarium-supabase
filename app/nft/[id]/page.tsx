@@ -19,6 +19,7 @@ import { serverNow } from "@/lib/format/relative-time";
 import { shortWallet } from "@/lib/format/wallet";
 import { explorerAddressUrl, getCluster } from "@/lib/solana/config";
 import { lamportsToSol } from "@/lib/solana/lamports";
+import { FEE_LABEL, feeOf } from "@/supabase/functions/_shared/fee";
 import { createClient } from "@/lib/supabase/server";
 
 const LABEL: React.CSSProperties = {
@@ -63,9 +64,8 @@ export default async function NftDetailPage({
   const royaltyBps = collection?.royalty_bps ?? 0;
   const viewerIsCreator = !!user && collection?.creator_id === user.id;
   const chargedRoyaltyBps = viewerIsCreator ? 0 : royaltyBps;
-  const FEE_BPS = 200;
   const buyerTotalSol = activeListing
-    ? lamportsToSol(priceLamports + (priceLamports * BigInt(chargedRoyaltyBps)) / 10000n + (priceLamports * BigInt(FEE_BPS)) / 10000n)
+    ? lamportsToSol(priceLamports + (priceLamports * BigInt(chargedRoyaltyBps)) / 10000n + feeOf(priceLamports))
     : null;
 
   const [
@@ -225,7 +225,7 @@ export default async function NftDetailPage({
               )}
               {buyerTotalSol ? (
                 <div style={{ marginTop: "var(--space-4)", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>
-                  + 2.0% fee
+                  + {FEE_LABEL} fee
                   {chargedRoyaltyBps > 0
                     ? ` + ${(chargedRoyaltyBps / 100).toFixed(1)}% royalty`
                     : viewerIsCreator

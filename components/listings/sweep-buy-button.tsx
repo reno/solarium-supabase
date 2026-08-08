@@ -17,6 +17,7 @@ import { explorerTxUrl, getSolanaChain } from "@/lib/solana/config";
 import { useSolBalance } from "@/lib/solana/use-balance";
 import { createUmiForWallet } from "@/lib/solana/umi";
 import { createClient } from "@/lib/supabase/client";
+import { FEE_LABEL, FEE_RATE } from "@/supabase/functions/_shared/fee";
 
 export type SweepItem = { id: string; name: string; priceSol: string; listingId: string };
 
@@ -44,7 +45,7 @@ function Inner({ account, items, royaltyBps, onDone, solUsd }: { account: UiWall
   const [open, setOpen] = useState(false);
 
   const priceTotal = items.reduce((s, it) => s + parseFloat(it.priceSol), 0);
-  const fee = priceTotal * 0.02;
+  const fee = priceTotal * FEE_RATE;
   const roy = (priceTotal * royaltyBps) / 10000;
   const total = priceTotal + fee + roy;
 
@@ -71,7 +72,7 @@ function Inner({ account, items, royaltyBps, onDone, solUsd }: { account: UiWall
             approveLabel: `Approve & buy ${items.length}`,
             lines: [
               ...itemLines,
-              { label: "Marketplace fee (2.0%)", value: `${fee.toFixed(4)} SOL`, muted: true },
+              { label: `Marketplace fee (${FEE_LABEL})`, value: `${fee.toFixed(4)} SOL`, muted: true },
               ...(royaltyBps ? [{ label: `Creator royalty (${(royaltyBps / 100).toFixed(1)}%)`, value: `${roy.toFixed(4)} SOL`, muted: true }] : []),
             ],
             total: { label: "You pay", value: `${total.toFixed(4)} SOL` },

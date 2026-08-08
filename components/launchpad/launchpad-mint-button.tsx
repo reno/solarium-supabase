@@ -17,6 +17,7 @@ import { explorerTxUrl, getSolanaChain } from "@/lib/solana/config";
 import { useSolBalance } from "@/lib/solana/use-balance";
 import { createUmiForWallet } from "@/lib/solana/umi";
 import { createClient } from "@/lib/supabase/client";
+import { FEE_LABEL, FEE_RATE } from "@/supabase/functions/_shared/fee";
 
 export function LaunchpadMintButton({
   availableListingIds,
@@ -125,7 +126,7 @@ function Inner({
   const clampedQty = Math.min(qty, maxQty);
 
   const priceNum = parseFloat(priceSol) || 0;
-  const feePer = priceNum * 0.02;
+  const feePer = priceNum * FEE_RATE;
   const royPer = (priceNum * royaltyBps) / 10000;
   const perItem = priceNum + feePer + royPer;
   const totalNum = perItem * clampedQty;
@@ -161,7 +162,7 @@ function Inner({
             approveLabel: "Approve & mint",
             lines: [
               { label: `Price × ${clampedQty}`, value: `${(priceNum * clampedQty).toFixed(4)} SOL` },
-              { label: "Marketplace fee (2.0%)", value: `${(feePer * clampedQty).toFixed(4)} SOL`, muted: true },
+              { label: `Marketplace fee (${FEE_LABEL})`, value: `${(feePer * clampedQty).toFixed(4)} SOL`, muted: true },
               ...(royaltyBps ? [{ label: `Creator royalty (${(royaltyBps / 100).toFixed(1)}%)`, value: `${(royPer * clampedQty).toFixed(4)} SOL`, muted: true }] : []),
               ...(reveal ? [{ label: "Reveal", value: reveal, muted: true }] : []),
             ],

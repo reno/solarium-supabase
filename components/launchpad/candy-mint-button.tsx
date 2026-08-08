@@ -9,13 +9,13 @@ import { Button, IconButton } from "@/components/design";
 import { useToast } from "@/components/toast/toast-provider";
 import { TxFlow } from "@/components/tx/tx-flow";
 import { deserializePhases, type SerializedPhase } from "@/components/launchpad/candy-machine-panel";
-import { feeOf } from "@/lib/launchpad/candy-guards";
 import { mintFromCandyMachine } from "@/lib/launchpad/candy-machine";
 import { explorerTxUrl, getSolanaChain } from "@/lib/solana/config";
 import { lamportsToSol } from "@/lib/solana/lamports";
 import { useSolBalance } from "@/lib/solana/use-balance";
 import { createUmiForWallet } from "@/lib/solana/umi";
 import { createClient } from "@/lib/supabase/client";
+import { FEE_LABEL, feeOf } from "@/supabase/functions/_shared/fee";
 
 const MINT_STAGES = [
   { key: "allowlist", label: "Proving allowlist membership" },
@@ -188,7 +188,7 @@ function Inner({
             approveLabel: "Approve & mint",
             lines: [
               { label: `Price × ${clampedQty}`, value: `${lamportsToSol(priceLamports * BigInt(clampedQty))} SOL` },
-              { label: "Marketplace fee (2.0%)", value: `${lamportsToSol(feeLamports * BigInt(clampedQty))} SOL`, muted: true },
+              { label: `Marketplace fee (${FEE_LABEL})`, value: `${lamportsToSol(feeLamports * BigInt(clampedQty))} SOL`, muted: true },
               ...(royaltyBps ? [{ label: "Creator royalty", value: "On resale only", muted: true }] : []),
               ...(reveal ? [{ label: "Reveal", value: reveal, muted: true }] : []),
               ...(clampedQty > 1 ? [{ label: "Wallet approvals", value: String(clampedQty), muted: true }] : []),

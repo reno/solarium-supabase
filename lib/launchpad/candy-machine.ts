@@ -29,7 +29,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
   configLineFor,
-  feeOf,
   guardGroupsFor,
   mintLimitId,
   nameSettings,
@@ -40,6 +39,7 @@ import {
   type PhaseInput,
 } from "@/lib/launchpad/candy-guards";
 import { getSettlementAuthority } from "@/lib/listings/listings";
+import { feeOf } from "@/supabase/functions/_shared/fee";
 import { buildNftMetadata } from "@/lib/mint/metadata";
 import { invokeFunction } from "@/lib/settle/invoke";
 import { withRpcRetry } from "@/lib/solana/retry";

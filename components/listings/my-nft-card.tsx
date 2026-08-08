@@ -23,6 +23,7 @@ import { getSolanaChain } from "@/lib/solana/config";
 import { lamportsToSol, solToLamports } from "@/lib/solana/lamports";
 import { createUmiForWallet } from "@/lib/solana/umi";
 import { createClient } from "@/lib/supabase/client";
+import { FEE_LABEL } from "@/supabase/functions/_shared/fee";
 
 const LIST_STEPS: ProgressStepDef[] = [
   { key: "checking", label: "Checking asset status" },
@@ -356,7 +357,7 @@ function ReceiveLine({ price, floorSol, royaltyBps }: { price: string; floorSol?
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)", color: "var(--text-tertiary)" }}>
-        You receive {Number.isFinite(p) ? p : "—"} SOL · buyer pays +2% fee{royaltyBps ? ` + ${(royaltyBps / 100).toFixed(1)}% royalty` : ""}
+        You receive {Number.isFinite(p) ? p : "—"} SOL · buyer pays +{FEE_LABEL} fee{royaltyBps ? ` + ${(royaltyBps / 100).toFixed(1)}% royalty` : ""}
       </span>
       {below ? (
         <span style={{ fontSize: "var(--text-2xs)", color: "var(--price-down)" }}>Below floor ({floorSol} SOL)</span>

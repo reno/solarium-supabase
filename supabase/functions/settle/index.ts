@@ -15,6 +15,7 @@ import {
   removePlugin,
   transfer,
 } from "npm:@metaplex-foundation/mpl-core@1.10.0";
+import { feeOf } from "../_shared/fee.ts";
 
 const SYSTEM_PROGRAM = publicKey("11111111111111111111111111111111");
 
@@ -55,11 +56,6 @@ function systemTransferData(lamports: bigint): Uint8Array {
 }
 
 type Admin = ReturnType<typeof createClient>;
-
-const FEE_BPS = 200n;
-function feeOf(price: bigint): bigint {
-  return (price * FEE_BPS) / 10000n;
-}
 
 type SettleParams = {
   assetAddress: string;

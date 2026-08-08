@@ -1,3 +1,5 @@
+import { FEE_LABEL } from "@/supabase/functions/_shared/fee";
+
 import { Dialog } from "../core/Dialog";
 import { Button } from "../core/Button";
 import { ArtTile } from "./ArtTile";
@@ -37,7 +39,7 @@ function Line({ label, value, strong, tone }: { label: string; value: string; st
   );
 }
 
-export function BuyNowDialog({ open, onClose, item, collection, price, fee = "2.0%", royalty = "5.0%", total, fiat, balance, onConfirm }: BuyNowDialogProps) {
+export function BuyNowDialog({ open, onClose, item, collection, price, fee = FEE_LABEL, royalty = "5.0%", total, fiat, balance, onConfirm }: BuyNowDialogProps) {
   const insufficient = balance != null && parseFloat(balance) < parseFloat(total ?? price);
   return (
     <Dialog

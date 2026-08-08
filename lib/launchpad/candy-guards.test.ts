@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   configLineFor,
-  feeOf,
   guardGroupsFor,
   guardsForPhase,
   itemNumberFromName,
@@ -14,6 +13,7 @@ import {
   uriSettings,
   type PhaseInput,
 } from "@/lib/launchpad/candy-guards";
+import { feeOf } from "@/supabase/functions/_shared/fee";
 
 const CREATOR = "H5KwtC7LAnQCeEQ3Ke48uuiVj2qcgdbheSFcscHx6MDF";
 const TREASURY = "2H4J2TPtPpoimHcKf5YYhHHzHbBTVTHJ4m2oUJ7XFq1c";
@@ -88,7 +88,7 @@ describe("config line settings", () => {
 });
 
 describe("phase → guards", () => {
-  it("charges the price to the creator and the 2% fee to the treasury", () => {
+  it("charges the price to the creator and the marketplace fee to the treasury", () => {
     const guards = guardsForPhase(phase(), 0, ctx);
     const payment = set<{ destination: string; lamports: { basisPoints: bigint } }>(guards.solPayment);
     expect(payment.destination).toBe(CREATOR);
@@ -96,7 +96,8 @@ describe("phase → guards", () => {
     const fee = set<{ destination: string; lamports: { basisPoints: bigint } }>(guards.solFixedFee);
     expect(fee.destination).toBe(TREASURY);
     expect(fee.lamports.basisPoints).toBe(feeOf(1_000_000_000n));
-    expect(fee.lamports.basisPoints).toBe(20_000_000n);
+    // Pinned literal: 1% of 1 SOL. Catches a silent change to FEE_BPS.
+    expect(fee.lamports.basisPoints).toBe(10_000_000n);
   });
 
   it("omits payment and fee guards for a free mint", () => {

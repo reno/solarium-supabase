@@ -16,6 +16,7 @@ import { explorerTxUrl, getSolanaChain } from "@/lib/solana/config";
 import { useSolBalance } from "@/lib/solana/use-balance";
 import { createUmiForWallet } from "@/lib/solana/umi";
 import { createClient } from "@/lib/supabase/client";
+import { FEE_LABEL, FEE_RATE } from "@/supabase/functions/_shared/fee";
 
 export const BUY_STEPS: TxStage[] = [
   { key: "preparing", label: "Verifying listing" },
@@ -114,7 +115,7 @@ function BuyButtonInner({
 
   const priceNum = parseFloat(priceSol);
   const royPct = (royaltyBps ?? 0) / 100;
-  const feeSol = priceNum * 0.02;
+  const feeSol = priceNum * FEE_RATE;
   const roySol = (priceNum * (royaltyBps ?? 0)) / 10000;
   const totalNum = priceNum + feeSol + roySol;
 
@@ -137,7 +138,7 @@ function BuyButtonInner({
             approveLabel: "Approve & pay",
             lines: [
               { label: collectionName ? `Price · ${collectionName}` : "Price", value: `${priceSol} SOL` },
-              { label: "Marketplace fee (2.0%)", value: `${feeSol.toFixed(4)} SOL`, muted: true },
+              { label: `Marketplace fee (${FEE_LABEL})`, value: `${feeSol.toFixed(4)} SOL`, muted: true },
               ...(royaltyBps ? [{ label: `Creator royalty (${royPct.toFixed(1)}%)`, value: `${roySol.toFixed(4)} SOL`, muted: true }] : []),
             ],
             total: { label: "You pay", value: `${totalNum.toFixed(4)} SOL` },

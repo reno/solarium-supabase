@@ -4,6 +4,7 @@ import {
   type DefaultGuardSetArgs,
 } from "@metaplex-foundation/mpl-core-candy-machine";
 import { createAmount, dateTime, publicKey, some } from "@metaplex-foundation/umi";
+import { feeOf } from "@/supabase/functions/_shared/fee";
 
 export type PhaseInput = {
   id: string;
@@ -15,12 +16,6 @@ export type PhaseInput = {
   allowlistOnly: boolean;
   position: number;
 };
-
-export const FEE_BPS = 200n;
-
-export function feeOf(price: bigint): bigint {
-  return (price * FEE_BPS) / 10000n;
-}
 
 export const MAX_PHASES = 200;
 
