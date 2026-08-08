@@ -16,9 +16,6 @@ import {
 
 import { getRpcUrl } from "@/lib/solana/config";
 
-// Umi (which mpl-core's instruction builders require) and @solana/kit use the
-// same wire format for transactions, so a wallet-standard signer obtained via
-// @solana/react can sign Umi transactions by round-tripping through bytes.
 function toUmiSigner(
   umi: Umi,
   kitSigner: TransactionModifyingSigner
@@ -44,9 +41,8 @@ function toUmiSigner(
       );
     },
     async signAllTransactions(transactions: UmiTransaction[]) {
-      // The wallet-standard bridge only supports signing one transaction per
-      // approval (it throws on arrays > 1), so sign sequentially rather than
-      // batching — this means one wallet prompt per transaction, not one total.
+      // The wallet-standard bridge throws on arrays > 1, so sign sequentially.
+      // One wallet prompt per transaction, not one total.
       const signed: UmiTransaction[] = [];
       for (const transaction of transactions) {
         signed.push(await this.signTransaction(transaction));

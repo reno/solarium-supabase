@@ -8,14 +8,17 @@ import type { UiWalletAccount } from "@wallet-standard/react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import { ProgressModal } from "@/components/progress-modal";
-import type { ProgressStepDef } from "@/components/progress-steps";
-import { buyListing, type BuyStage } from "@/lib/listings/buy";
-import { getSolanaChain } from "@/lib/solana/config";
+import { Button } from "@/components/design";
+import { TxFlow, type TxStage } from "@/components/tx/tx-flow";
+import { useToast } from "@/components/toast/toast-provider";
+import { buyListing } from "@/lib/listings/buy";
+import { explorerTxUrl, getSolanaChain } from "@/lib/solana/config";
+import { useSolBalance } from "@/lib/solana/use-balance";
 import { createUmiForWallet } from "@/lib/solana/umi";
 import { createClient } from "@/lib/supabase/client";
+import { FEE_LABEL, FEE_RATE } from "@/supabase/functions/_shared/fee";
 
-const BUY_STEPS: ProgressStepDef[] = [
+export const BUY_STEPS: TxStage[] = [
   { key: "preparing", label: "Verifying listing" },
   { key: "signing", label: "Waiting for your wallet" },
   { key: "sending", label: "Sending transaction" },
@@ -28,25 +31,39 @@ export function BuyButton({
   sellerId,
   priceSol,
   viewerId,
+  itemName,
+  collectionName,
+  royaltyBps,
+  solUsd,
 }: {
   listingId: string;
   sellerId: string;
   priceSol: string;
   viewerId: string | null;
+  itemName?: string;
+  collectionName?: string;
+  royaltyBps?: number;
+  solUsd?: number;
 }) {
   const [selectedWalletAccount] = useSelectedWalletAccount();
 
   if (!viewerId) {
     return (
-      <p className="text-sm text-zinc-500">Sign in with your wallet to buy.</p>
+      <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>
+        Sign in with your wallet to buy.
+      </p>
     );
   }
   if (viewerId === sellerId) {
-    return <p className="text-sm text-zinc-500">Your listing</p>;
+    return (
+      <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>Your listing</p>
+    );
   }
   if (!selectedWalletAccount) {
     return (
-      <p className="text-sm text-zinc-500">Connect your wallet to buy.</p>
+      <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>
+        Connect your wallet to buy.
+      </p>
     );
   }
   return (
@@ -54,6 +71,10 @@ export function BuyButton({
       account={selectedWalletAccount}
       listingId={listingId}
       priceSol={priceSol}
+      itemName={itemName}
+      collectionName={collectionName}
+      royaltyBps={royaltyBps}
+      solUsd={solUsd}
     />
   );
 }
@@ -62,58 +83,74 @@ function BuyButtonInner({
   account,
   listingId,
   priceSol,
+  itemName,
+  collectionName,
+  royaltyBps,
+  solUsd,
 }: {
   account: UiWalletAccount;
   listingId: string;
   priceSol: string;
+  itemName?: string;
+  collectionName?: string;
+  royaltyBps?: number;
+  solUsd?: number;
 }) {
-  const [phase, setPhase] = useState<"idle" | "active" | "error">("idle");
-  const [stage, setStage] = useState<BuyStage | null>(null);
+  const [flowOpen, setFlowOpen] = useState(false);
   const [bought, setBought] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const kitSigner = useWalletAccountTransactionSigner(
-    account,
-    getSolanaChain()
-  );
+  const kitSigner = useWalletAccountTransactionSigner(account, getSolanaChain());
   const umi = useMemo(() => createUmiForWallet(kitSigner), [kitSigner]);
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
+  const { showToast } = useToast();
+  const balanceLamports = useSolBalance(account.address);
 
   if (bought) {
-    return <p className="text-sm font-medium text-green-600 dark:text-green-400">It&apos;s yours! 🎉</p>;
+    return (
+      <p style={{ margin: 0, fontSize: "var(--text-md)", fontWeight: "var(--weight-semibold)", color: "var(--price-up)" }}>
+        It&apos;s yours!
+      </p>
+    );
   }
 
+  const priceNum = parseFloat(priceSol);
+  const royPct = (royaltyBps ?? 0) / 100;
+  const feeSol = priceNum * FEE_RATE;
+  const roySol = (priceNum * (royaltyBps ?? 0)) / 10000;
+  const totalNum = priceNum + feeSol + roySol;
+
   return (
-    <div className="flex flex-col gap-2">
-      <button
-        disabled={phase === "active"}
-        className="rounded-full bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-black dark:hover:bg-zinc-300"
-        onClick={async () => {
-          setPhase("active");
-          setError(null);
-          try {
-            await buyListing({ supabase, umi, listingId, onStage: setStage });
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+      <Button variant="primary" icon="zap" onClick={() => setFlowOpen(true)}>
+        Buy for {priceSol} SOL
+      </Button>
+      {flowOpen && (
+        <TxFlow
+          open
+          onClose={() => setFlowOpen(false)}
+          onDone={() => {
             setBought(true);
-            setPhase("idle");
+            showToast({ type: "success", title: "Purchase confirmed", message: `${itemName ?? "Item"} · ${priceSol} SOL` });
             router.refresh();
-          } catch (e) {
-            setError(e instanceof Error ? e.message : "Purchase failed.");
-            setPhase("error");
-          }
-        }}
-      >
-        {phase === "active" ? "Buying…" : `Buy for ${priceSol} SOL`}
-      </button>
-      {phase !== "idle" && (
-        <ProgressModal
-          title="Buying NFT"
-          steps={BUY_STEPS}
-          currentKey={stage}
-          status={phase === "error" ? "error" : "active"}
-          errorMessage={error}
-          onClose={() => {
-            setPhase("idle");
-            setStage(null);
+          }}
+          config={{
+            title: itemName ? `Buy ${itemName}` : "Buy item",
+            approveLabel: "Approve & pay",
+            lines: [
+              { label: collectionName ? `Price · ${collectionName}` : "Price", value: `${priceSol} SOL` },
+              { label: `Marketplace fee (${FEE_LABEL})`, value: `${feeSol.toFixed(4)} SOL`, muted: true },
+              ...(royaltyBps ? [{ label: `Creator royalty (${royPct.toFixed(1)}%)`, value: `${roySol.toFixed(4)} SOL`, muted: true }] : []),
+            ],
+            total: { label: "You pay", value: `${totalNum.toFixed(4)} SOL` },
+            fiatUsd: solUsd ? totalNum * solUsd : null,
+            balanceSol: balanceLamports != null ? Number(balanceLamports) / 1e9 : null,
+            needSol: totalNum,
+            stages: BUY_STEPS,
+            perform: (onStage) => buyListing({ supabase, umi, listingId, onStage: onStage as (s: string) => void }),
+            successTitle: "Purchase confirmed",
+            successDetail: itemName ? `${itemName} is now yours.` : undefined,
+            explorerUrl: explorerTxUrl,
+            errorHint: "If your wallet never prompted or you rejected it, no SOL left your wallet.",
           }}
         />
       )}

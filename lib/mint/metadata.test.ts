@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { buildNftMetadata, editionName } from "./metadata";
+import { buildNftMetadata, itemName } from "./metadata";
 
-describe("editionName", () => {
-  it("keeps the base name for single mints", () => {
-    expect(editionName("Sunset", 1, 1)).toBe("Sunset");
+describe("itemName", () => {
+  it("keeps the base name for a standalone 1/1", () => {
+    expect(itemName("Sunset", 1, 1)).toBe("Sunset");
   });
 
-  it("numbers editions", () => {
-    expect(editionName("Sunset", 3, 8)).toBe("Sunset #3/8");
+  it("numbers items in a multi-item collection (no /total)", () => {
+    expect(itemName("Sunset", 3, 8)).toBe("Sunset #3");
   });
 });
 

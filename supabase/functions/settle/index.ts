@@ -1,14 +1,3 @@
-// Sale settlement. Two actions, both authenticated:
-//
-//  prepare: verifies the listing against *on-chain* state (owner + transfer
-//    delegate), then builds one atomic transaction — Core transfer
-//    (seller → buyer, signed here by the settlement authority) + lamport
-//    payment (buyer → seller) — and returns it partially signed. The buyer
-//    signs and submits it from the browser.
-//
-//  confirm: verifies the confirmed signature against the RPC (success, seller
-//    paid at least the price, asset now owned by the buyer) before marking the
-//    listing sold. The client's word is never trusted.
 import { createClient } from "npm:@supabase/supabase-js@2.110.7";
 import {
   createNoopSigner,
@@ -26,6 +15,8 @@ import {
   removePlugin,
   transfer,
 } from "npm:@metaplex-foundation/mpl-core@1.10.0";
+import { feeOf } from "../_shared/fee.ts";
+import { rpcCall } from "../_shared/rpc.ts";
 
 const SYSTEM_PROGRAM = publicKey("11111111111111111111111111111111");
 
@@ -57,8 +48,6 @@ function getSettlementSigner(umi: Umi) {
   return createSignerFromKeypair(umi, keypair);
 }
 
-// System program transfer instruction, encoded by hand: u32 LE discriminator
-// (2 = Transfer) followed by u64 LE lamports.
 function systemTransferData(lamports: bigint): Uint8Array {
   const data = new Uint8Array(12);
   const view = new DataView(data.buffer);
@@ -67,91 +56,80 @@ function systemTransferData(lamports: bigint): Uint8Array {
   return data;
 }
 
-type ListingRow = {
-  id: string;
-  status: string;
-  price_lamports: number | string;
-  seller_id: string;
-  nft: {
-    id: string;
-    asset_address: string;
-    collection: { collection_address: string | null } | null;
-  };
-  seller: { wallet_address: string | null };
+type Admin = ReturnType<typeof createClient>;
+
+type SettleParams = {
+  assetAddress: string;
+  collectionAddress: string | null;
+  sellerWallet: string;
+  buyerWallet: string;
+  price: bigint;
+  creatorWallet?: string | null;
+  royaltyLamports?: bigint;
+  feeLamports?: bigint;
+  staleListingId?: string;
 };
 
-async function loadListing(admin: ReturnType<typeof createClient>, listingId: string) {
-  const { data, error } = await admin
-    .from("listings")
-    .select(
-      "id, status, price_lamports, seller_id, nft:nfts(id, asset_address, collection:collections(collection_address)), seller:profiles!listings_seller_id_fkey(wallet_address)"
-    )
-    .eq("id", listingId)
-    .maybeSingle();
-  if (error) throw new Error(`Failed to load listing: ${error.message}`);
-  return data as ListingRow | null;
+type CollectionRoyalty = {
+  collection_address: string | null;
+  royalty_bps: number | null;
+  creator: { wallet_address: string | null } | { wallet_address: string | null }[] | null;
+} | null;
+
+function royaltyOf(collection: CollectionRoyalty, price: bigint): {
+  creatorWallet: string | null;
+  royaltyLamports: bigint;
+} {
+  if (!collection) return { creatorWallet: null, royaltyLamports: 0n };
+  const creator = Array.isArray(collection.creator) ? collection.creator[0] : collection.creator;
+  const creatorWallet = creator?.wallet_address ?? null;
+  const bps = BigInt(collection.royalty_bps ?? 0);
+  const royaltyLamports = creatorWallet ? (price * bps) / 10000n : 0n;
+  return { creatorWallet, royaltyLamports };
 }
 
-async function prepare(
-  admin: ReturnType<typeof createClient>,
-  userId: string,
-  listingId: string
-): Promise<Response> {
-  const listing = await loadListing(admin, listingId);
-  if (!listing) return json(404, { error: "Listing not found." });
-  if (listing.status !== "active") {
-    return json(409, { error: "This listing is no longer active." });
-  }
-  if (listing.seller_id === userId) {
-    return json(400, { error: "You cannot buy your own listing." });
-  }
-  const sellerWallet = listing.seller?.wallet_address;
-  if (!sellerWallet) return json(409, { error: "Seller has no wallet on file." });
+// Must mirror `doRoyalty` in the verify path below: a transaction built without a royalty
+// leg fails a verifier that still expects one.
+function splitApplies(p: SettleParams): boolean {
+  return (
+    (p.royaltyLamports ?? 0n) > 0n &&
+    !!p.creatorWallet &&
+    p.creatorWallet !== p.sellerWallet &&
+    p.creatorWallet !== p.buyerWallet
+  );
+}
 
-  const { data: buyerProfile } = await admin
-    .from("profiles")
-    .select("wallet_address")
-    .eq("id", userId)
-    .maybeSingle();
-  const buyerWallet = buyerProfile?.wallet_address;
-  if (!buyerWallet) return json(409, { error: "Your profile has no wallet address." });
-
+async function buildSettlementResponse(admin: Admin, p: SettleParams): Promise<Response> {
   const { umi } = getUmi();
   const settlementSigner = getSettlementSigner(umi);
 
-  // Chain is the source of truth: the DB row is only a cache.
   let asset;
   try {
-    asset = await fetchAsset(umi, listing.nft.asset_address);
+    asset = await fetchAsset(umi, p.assetAddress);
   } catch {
     return json(409, { error: "Asset not found on chain." });
   }
-  if (asset.owner !== publicKey(sellerWallet)) {
-    // Seller moved the NFT out from under the listing — close it.
-    await admin
-      .from("listings")
-      .update({ status: "cancelled" })
-      .eq("id", listing.id)
-      .eq("status", "active");
+  if (asset.owner !== publicKey(p.sellerWallet)) {
+    if (p.staleListingId) {
+      await admin
+        .from("listings")
+        .update({ status: "cancelled" })
+        .eq("id", p.staleListingId)
+        .eq("status", "active");
+    }
     return json(409, { error: "The seller no longer owns this NFT." });
   }
   const delegate = asset.transferDelegate?.authority;
-  if (
-    delegate?.type !== "Address" ||
-    delegate.address !== settlementSigner.publicKey
-  ) {
-    return json(409, {
-      error: "This listing is not delegated for settlement.",
-    });
+  if (delegate?.type !== "Address" || delegate.address !== settlementSigner.publicKey) {
+    return json(409, { error: "This item is not delegated for settlement." });
   }
 
-  const price = BigInt(listing.price_lamports);
-  const buyer = publicKey(buyerWallet);
+  const buyer = publicKey(p.buyerWallet);
   const buyerSigner = createNoopSigner(buyer);
-  const collectionAddress = listing.nft.collection?.collection_address ?? null;
+  const collectionAddress = p.collectionAddress;
 
   const blockhash = await umi.rpc.getLatestBlockhash();
-  const builder = transactionBuilder()
+  let builder = transactionBuilder()
     .add(
       transfer(umi, {
         asset,
@@ -170,15 +148,9 @@ async function prepare(
       })
     )
     .add(
-      // Core resets a TransferDelegate's authority to Owner the moment it's
-      // used to move the asset (one-shot delegate) — so by this point in the
-      // same transaction, the buyer (not the settlement signer) is already
-      // the plugin's authority and is who must remove it.
       removePlugin(umi, {
         asset: publicKey(asset.publicKey),
-        ...(collectionAddress
-          ? { collection: publicKey(collectionAddress) }
-          : {}),
+        ...(collectionAddress ? { collection: publicKey(collectionAddress) } : {}),
         plugin: { type: "TransferDelegate" },
         authority: buyerSigner,
         payer: buyerSigner,
@@ -189,15 +161,43 @@ async function prepare(
         programId: SYSTEM_PROGRAM,
         keys: [
           { pubkey: buyer, isSigner: true, isWritable: true },
-          { pubkey: publicKey(sellerWallet), isSigner: false, isWritable: true },
+          { pubkey: publicKey(p.sellerWallet), isSigner: false, isWritable: true },
         ],
-        data: systemTransferData(price),
+        data: systemTransferData(p.price),
       },
       signers: [buyerSigner],
       bytesCreatedOnChain: 0,
-    })
-    .setFeePayer(buyerSigner)
-    .setBlockhash(blockhash);
+    });
+  if (splitApplies(p)) {
+    builder = builder.add({
+      instruction: {
+        programId: SYSTEM_PROGRAM,
+        keys: [
+          { pubkey: buyer, isSigner: true, isWritable: true },
+          { pubkey: publicKey(p.creatorWallet!), isSigner: false, isWritable: true },
+        ],
+        data: systemTransferData(p.royaltyLamports ?? 0n),
+      },
+      signers: [buyerSigner],
+      bytesCreatedOnChain: 0,
+    });
+  }
+  const fee = p.feeLamports ?? 0n;
+  if (fee > 0n) {
+    builder = builder.add({
+      instruction: {
+        programId: SYSTEM_PROGRAM,
+        keys: [
+          { pubkey: buyer, isSigner: true, isWritable: true },
+          { pubkey: settlementSigner.publicKey, isSigner: false, isWritable: true },
+        ],
+        data: systemTransferData(fee),
+      },
+      signers: [buyerSigner],
+      bytesCreatedOnChain: 0,
+    });
+  }
+  builder = builder.setFeePayer(buyerSigner).setBlockhash(blockhash);
 
   const transaction = builder.build(umi);
   const signed = await signTransaction(transaction, [settlementSigner]);
@@ -209,106 +209,156 @@ async function prepare(
   });
 }
 
-// Public devnet RPC endpoints rate-limit aggressively; by the time confirm()
-// calls this, the buyer's transaction has already landed on chain, so it's
-// worth a short backoff-and-retry rather than failing a real sale over a
-// transient 429.
-async function rpcCall(
+async function verifySettlement(
   rpcUrl: string,
-  method: string,
-  params: unknown[],
-  attempt = 1
-): Promise<unknown> {
-  const response = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  const body = await response.json();
-  const isRateLimited =
-    response.status === 429 ||
-    (typeof body.error?.message === "string" &&
-      body.error.message.toLowerCase().includes("rate limit"));
-  if (isRateLimited && attempt < 5) {
-    await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
-    return rpcCall(rpcUrl, method, params, attempt + 1);
+  args: {
+    signature: string;
+    buyerWallet: string;
+    sellerWallet: string;
+    assetAddress: string;
+    price: bigint;
+    creatorWallet?: string | null;
+    royaltyLamports?: bigint;
+    treasuryWallet?: string | null;
+    feeLamports?: bigint;
   }
-  if (body.error) throw new Error(`${method}: ${body.error.message}`);
-  return body.result;
-}
-
-async function confirm(
-  admin: ReturnType<typeof createClient>,
-  userId: string,
-  listingId: string,
-  signature: string
-): Promise<Response> {
-  const listing = await loadListing(admin, listingId);
-  if (!listing) return json(404, { error: "Listing not found." });
-  if (listing.status === "sold") {
-    return json(200, { ok: true, alreadyRecorded: true });
-  }
-  if (listing.status !== "active") {
-    return json(409, { error: "This listing is no longer active." });
-  }
-
-  const { data: buyerProfile } = await admin
-    .from("profiles")
-    .select("wallet_address")
-    .eq("id", userId)
-    .maybeSingle();
-  const buyerWallet = buyerProfile?.wallet_address;
-  if (!buyerWallet) return json(409, { error: "Your profile has no wallet address." });
-
-  const { rpcUrl } = getUmi();
-  const price = BigInt(listing.price_lamports);
-  const sellerWallet = listing.seller?.wallet_address;
-  const assetAddress = listing.nft.asset_address;
-
+): Promise<Response | null> {
   const tx = await rpcCall(rpcUrl, "getTransaction", [
-    signature,
-    {
-      commitment: "confirmed",
-      encoding: "json",
-      maxSupportedTransactionVersion: 0,
-    },
+    args.signature,
+    { commitment: "confirmed", encoding: "json", maxSupportedTransactionVersion: 0 },
   ]);
   if (!tx) return json(409, { error: "Transaction not found or not confirmed yet." });
   if (tx.meta?.err) return json(409, { error: "Transaction failed on chain." });
 
-  // Must be *this* sale: fee payer is the buyer's wallet, and it touches the
-  // asset and the seller — not just any successful transaction signature.
   const accountKeys: string[] = tx.transaction.message.accountKeys;
-  if (accountKeys[0] !== buyerWallet) {
+  if (accountKeys[0] !== args.buyerWallet) {
     return json(409, { error: "Transaction was not paid by your wallet." });
   }
-  if (!accountKeys.includes(assetAddress) || !sellerWallet || !accountKeys.includes(sellerWallet)) {
-    return json(409, { error: "Transaction does not match this listing." });
+  if (!accountKeys.includes(args.assetAddress) || !accountKeys.includes(args.sellerWallet)) {
+    return json(409, { error: "Transaction does not match this sale." });
   }
 
-  const sellerIndex = accountKeys.indexOf(sellerWallet);
-  const received =
-    BigInt(tx.meta.postBalances[sellerIndex]) -
-    BigInt(tx.meta.preBalances[sellerIndex]);
-  if (received < price) {
-    return json(409, { error: "Seller was not paid the listing price." });
+  const royalty = args.royaltyLamports ?? 0n;
+  // Must mirror `splitApplies` in the build path above.
+  const doRoyalty =
+    royalty > 0n &&
+    !!args.creatorWallet &&
+    args.creatorWallet !== args.sellerWallet &&
+    args.creatorWallet !== args.buyerWallet;
+
+  const delta = (wallet: string): bigint => {
+    const i = accountKeys.indexOf(wallet);
+    return i < 0 ? -1n : BigInt(tx.meta.postBalances[i]) - BigInt(tx.meta.preBalances[i]);
+  };
+
+  if (delta(args.sellerWallet) < args.price) {
+    return json(409, { error: "Seller was not paid the agreed price." });
+  }
+  if (doRoyalty) {
+    if (!accountKeys.includes(args.creatorWallet!) || delta(args.creatorWallet!) < royalty) {
+      return json(409, { error: "Royalty was not paid to the creator." });
+    }
+  }
+  const fee = args.feeLamports ?? 0n;
+  if (fee > 0n && args.treasuryWallet) {
+    if (!accountKeys.includes(args.treasuryWallet) || delta(args.treasuryWallet) < fee) {
+      return json(409, { error: "Marketplace fee was not paid." });
+    }
   }
 
-  // AssetV1 layout: byte 0 is the key discriminator, bytes 1-33 the owner pubkey.
   const account = await rpcCall(rpcUrl, "getAccountInfo", [
-    assetAddress,
+    args.assetAddress,
     { commitment: "confirmed", encoding: "base64" },
   ]);
   const data = account?.value?.data?.[0];
   if (!data) return json(409, { error: "Asset account not found." });
   const bytes = base64.serialize(data);
   const onChainOwner = base58.deserialize(bytes.slice(1, 33))[0];
-  if (bytes[0] !== 1 || onChainOwner !== buyerWallet) {
+  if (bytes[0] !== 1 || onChainOwner !== args.buyerWallet) {
     return json(409, { error: "Asset is not owned by your wallet." });
   }
+  return null;
+}
 
-  // All checks passed — record the sale. The status guard makes this a
-  // single-winner update if two confirms race.
+async function walletOf(admin: Admin, userId: string): Promise<string | null> {
+  const { data } = await admin.from("profiles").select("wallet_address").eq("id", userId).maybeSingle();
+  return data?.wallet_address ?? null;
+}
+
+type ListingRow = {
+  id: string;
+  status: string;
+  price_lamports: number | string;
+  seller_id: string;
+  nft: { id: string; asset_address: string; collection_id: string | null; collection: CollectionRoyalty };
+  seller: { wallet_address: string | null };
+};
+
+async function loadListing(admin: Admin, listingId: string) {
+  const { data, error } = await admin
+    .from("listings")
+    .select(
+      "id, status, price_lamports, seller_id, nft:nfts(id, asset_address, collection_id, collection:collections(collection_address, royalty_bps, creator:profiles!collections_creator_id_fkey(wallet_address))), seller:profiles!listings_seller_id_fkey(wallet_address)"
+    )
+    .eq("id", listingId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to load listing: ${error.message}`);
+  return data as ListingRow | null;
+}
+
+async function prepare(admin: Admin, userId: string, listingId: string): Promise<Response> {
+  const listing = await loadListing(admin, listingId);
+  if (!listing) return json(404, { error: "Listing not found." });
+  if (listing.status !== "active") return json(409, { error: "This listing is no longer active." });
+  if (listing.seller_id === userId) return json(400, { error: "You cannot buy your own listing." });
+  const sellerWallet = listing.seller?.wallet_address;
+  if (!sellerWallet) return json(409, { error: "Seller has no wallet on file." });
+  const buyerWallet = await walletOf(admin, userId);
+  if (!buyerWallet) return json(409, { error: "Your profile has no wallet address." });
+
+  const price = BigInt(listing.price_lamports);
+  const { creatorWallet, royaltyLamports } = royaltyOf(listing.nft.collection, price);
+  return await buildSettlementResponse(admin, {
+    assetAddress: listing.nft.asset_address,
+    collectionAddress: listing.nft.collection?.collection_address ?? null,
+    sellerWallet,
+    buyerWallet,
+    price,
+    creatorWallet,
+    royaltyLamports,
+    feeLamports: feeOf(price),
+    staleListingId: listing.id,
+  });
+}
+
+async function confirm(admin: Admin, userId: string, listingId: string, signature: string): Promise<Response> {
+  const listing = await loadListing(admin, listingId);
+  if (!listing) return json(404, { error: "Listing not found." });
+  if (listing.status === "sold") return json(200, { ok: true, alreadyRecorded: true });
+  if (listing.status !== "active") return json(409, { error: "This listing is no longer active." });
+
+  const buyerWallet = await walletOf(admin, userId);
+  if (!buyerWallet) return json(409, { error: "Your profile has no wallet address." });
+  const sellerWallet = listing.seller?.wallet_address;
+  if (!sellerWallet) return json(409, { error: "Seller has no wallet on file." });
+
+  const { umi, rpcUrl } = getUmi();
+  const treasuryWallet = getSettlementSigner(umi).publicKey;
+  const price = BigInt(listing.price_lamports);
+  const { creatorWallet, royaltyLamports } = royaltyOf(listing.nft.collection, price);
+  const bad = await verifySettlement(rpcUrl, {
+    signature,
+    buyerWallet,
+    sellerWallet,
+    assetAddress: listing.nft.asset_address,
+    price,
+    creatorWallet,
+    royaltyLamports,
+    feeLamports: feeOf(price),
+    treasuryWallet,
+  });
+  if (bad) return bad;
+
   const { data: updated, error: updateError } = await admin
     .from("listings")
     .update({ status: "sold", buyer_id: userId, sale_tx: signature })
@@ -316,14 +366,9 @@ async function confirm(
     .eq("status", "active")
     .select("id");
   if (updateError) return json(500, { error: updateError.message });
-  if (!updated || updated.length === 0) {
-    return json(409, { error: "Listing was already settled." });
-  }
+  if (!updated || updated.length === 0) return json(409, { error: "Listing was already settled." });
 
-  await admin
-    .from("nfts")
-    .update({ owner_id: userId, owner_wallet: buyerWallet })
-    .eq("id", listing.nft.id);
+  await admin.from("nfts").update({ owner_id: userId, owner_wallet: buyerWallet }).eq("id", listing.nft.id);
   await admin.from("activities").insert({
     type: "sale",
     nft_id: listing.nft.id,
@@ -332,14 +377,173 @@ async function confirm(
     lamports: price.toString(),
     tx_signature: signature,
   });
+  return json(200, { ok: true });
+}
 
+type OfferRow = {
+  id: string;
+  status: string;
+  price_lamports: number | string;
+  bidder_id: string;
+  collection_id: string | null;
+  nft: {
+    id: string;
+    asset_address: string;
+    owner_id: string | null;
+    collection_id: string | null;
+    collection: CollectionRoyalty;
+  } | null;
+  bidder: { wallet_address: string | null };
+};
+
+async function loadOffer(admin: Admin, offerId: string) {
+  const { data, error } = await admin
+    .from("offers")
+    .select(
+      "id, status, price_lamports, bidder_id, collection_id, nft:nfts(id, asset_address, owner_id, collection_id, collection:collections(collection_address, royalty_bps, creator:profiles!collections_creator_id_fkey(wallet_address))), bidder:profiles!offers_bidder_id_fkey(wallet_address)"
+    )
+    .eq("id", offerId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to load offer: ${error.message}`);
+  return data as OfferRow | null;
+}
+
+async function activeListingFor(admin: Admin, nftId: string) {
+  const { data } = await admin
+    .from("listings")
+    .select("id, seller_id, seller:profiles!listings_seller_id_fkey(wallet_address)")
+    .eq("nft_id", nftId)
+    .eq("status", "active")
+    .maybeSingle();
+  return data as { id: string; seller_id: string; seller: { wallet_address: string | null } } | null;
+}
+
+async function acceptOffer(admin: Admin, userId: string, offerId: string, nftId?: string): Promise<Response> {
+  const offer = await loadOffer(admin, offerId);
+  if (!offer) return json(404, { error: "Offer not found." });
+  if (offer.status !== "active") return json(409, { error: "This offer is no longer active." });
+
+  let nftIdToSettle: string;
+  if (offer.nft) {
+    if (offer.nft.owner_id !== userId) return json(403, { error: "Only the current owner can accept offers." });
+    nftIdToSettle = offer.nft.id;
+  } else {
+    if (!nftId) return json(400, { error: "Pick which item to sell to accept a collection offer." });
+    const { data: nft, error: nftErr } = await admin
+      .from("nfts")
+      .select("id, owner_id, collection_id")
+      .eq("id", nftId)
+      .maybeSingle();
+    if (nftErr) return json(500, { error: nftErr.message });
+    if (!nft) return json(404, { error: "Item not found." });
+    if (nft.owner_id !== userId) return json(403, { error: "Only the current owner can accept offers." });
+    if (nft.collection_id !== offer.collection_id) return json(409, { error: "That item isn't in this collection." });
+    nftIdToSettle = nft.id;
+  }
+
+  const listing = await activeListingFor(admin, nftIdToSettle);
+  if (!listing) {
+    return json(409, { error: "List this item before accepting offers (offers settle through the listing)." });
+  }
+
+  const { data: updated, error } = await admin
+    .from("offers")
+    .update({ status: "accepted", nft_id: nftIdToSettle })
+    .eq("id", offer.id)
+    .eq("status", "active")
+    .select("id");
+  if (error) return json(500, { error: error.message });
+  if (!updated || updated.length === 0) return json(409, { error: "Offer was already handled." });
+  return json(200, { ok: true });
+}
+
+async function prepareOffer(admin: Admin, userId: string, offerId: string): Promise<Response> {
+  const offer = await loadOffer(admin, offerId);
+  if (!offer) return json(404, { error: "Offer not found." });
+  if (offer.status !== "accepted") return json(409, { error: "This offer has not been accepted." });
+  if (offer.bidder_id !== userId) return json(403, { error: "Only the bidder can complete this offer." });
+  if (!offer.nft) return json(409, { error: "This offer isn't bound to an item yet." });
+  const listing = await activeListingFor(admin, offer.nft.id);
+  if (!listing) return json(409, { error: "The item is no longer listed." });
+  const sellerWallet = listing.seller?.wallet_address;
+  if (!sellerWallet) return json(409, { error: "Seller has no wallet on file." });
+  const buyerWallet = offer.bidder?.wallet_address ?? (await walletOf(admin, userId));
+  if (!buyerWallet) return json(409, { error: "Your profile has no wallet address." });
+
+  const price = BigInt(offer.price_lamports);
+  const { creatorWallet, royaltyLamports } = royaltyOf(offer.nft.collection, price);
+  return await buildSettlementResponse(admin, {
+    assetAddress: offer.nft.asset_address,
+    collectionAddress: offer.nft.collection?.collection_address ?? null,
+    sellerWallet,
+    buyerWallet,
+    price,
+    creatorWallet,
+    royaltyLamports,
+    feeLamports: feeOf(price),
+    staleListingId: listing.id,
+  });
+}
+
+async function confirmOffer(admin: Admin, userId: string, offerId: string, signature: string): Promise<Response> {
+  const offer = await loadOffer(admin, offerId);
+  if (!offer) return json(404, { error: "Offer not found." });
+  if (offer.status !== "accepted") return json(409, { error: "This offer has not been accepted." });
+  if (offer.bidder_id !== userId) return json(403, { error: "Only the bidder can complete this offer." });
+  if (!offer.nft) return json(409, { error: "This offer isn't bound to an item yet." });
+  const listing = await activeListingFor(admin, offer.nft.id);
+  if (!listing) return json(409, { error: "The item is no longer listed." });
+  const sellerWallet = listing.seller?.wallet_address;
+  if (!sellerWallet) return json(409, { error: "Seller has no wallet on file." });
+  const buyerWallet = offer.bidder?.wallet_address ?? (await walletOf(admin, userId));
+  if (!buyerWallet) return json(409, { error: "Your profile has no wallet address." });
+
+  const { umi, rpcUrl } = getUmi();
+  const treasuryWallet = getSettlementSigner(umi).publicKey;
+  const price = BigInt(offer.price_lamports);
+  const { creatorWallet, royaltyLamports } = royaltyOf(offer.nft.collection, price);
+  const bad = await verifySettlement(rpcUrl, {
+    signature,
+    buyerWallet,
+    sellerWallet,
+    assetAddress: offer.nft.asset_address,
+    price,
+    creatorWallet,
+    royaltyLamports,
+    feeLamports: feeOf(price),
+    treasuryWallet,
+  });
+  if (bad) return bad;
+
+  const { data: updated, error: updateError } = await admin
+    .from("offers")
+    .update({ status: "accepted", accepted_tx: signature })
+    .eq("id", offer.id)
+    .eq("status", "accepted")
+    .is("accepted_tx", null)
+    .select("id");
+  if (updateError) return json(500, { error: updateError.message });
+  if (!updated || updated.length === 0) return json(200, { ok: true, alreadyRecorded: true });
+
+  await admin
+    .from("listings")
+    .update({ status: "sold", buyer_id: userId, sale_tx: signature })
+    .eq("id", listing.id)
+    .eq("status", "active");
+  await admin.from("nfts").update({ owner_id: userId, owner_wallet: buyerWallet }).eq("id", offer.nft.id);
+  await admin.from("activities").insert({
+    type: "sale",
+    nft_id: offer.nft.id,
+    actor_id: userId,
+    counterparty_id: listing.seller_id,
+    lamports: price.toString(),
+    tx_signature: signature,
+  });
   return json(200, { ok: true });
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -348,29 +552,29 @@ Deno.serve(async (req) => {
     const {
       data: { user },
     } = await userClient.auth.getUser();
-    if (!user) return json(401, { error: "Sign in to buy." });
+    if (!user) return json(401, { error: "Sign in to continue." });
 
-    const admin = createClient(
-      supabaseUrl,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-
+    const admin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const body = await req.json();
+
     if (body.action === "prepare" && typeof body.listingId === "string") {
       return await prepare(admin, user.id, body.listingId);
     }
-    if (
-      body.action === "confirm" &&
-      typeof body.listingId === "string" &&
-      typeof body.signature === "string"
-    ) {
+    if (body.action === "confirm" && typeof body.listingId === "string" && typeof body.signature === "string") {
       return await confirm(admin, user.id, body.listingId, body.signature);
+    }
+    if (body.action === "acceptOffer" && typeof body.offerId === "string") {
+      return await acceptOffer(admin, user.id, body.offerId, typeof body.nftId === "string" ? body.nftId : undefined);
+    }
+    if (body.action === "prepareOffer" && typeof body.offerId === "string") {
+      return await prepareOffer(admin, user.id, body.offerId);
+    }
+    if (body.action === "confirmOffer" && typeof body.offerId === "string" && typeof body.signature === "string") {
+      return await confirmOffer(admin, user.id, body.offerId, body.signature);
     }
     return json(400, { error: "Unknown action." });
   } catch (e) {
     console.error(e);
-    return json(500, {
-      error: e instanceof Error ? e.message : "Settlement failed.",
-    });
+    return json(500, { error: e instanceof Error ? e.message : "Settlement failed." });
   }
 });

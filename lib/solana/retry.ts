@@ -1,6 +1,3 @@
-// Public devnet RPC endpoints rate-limit aggressively under any real usage.
-// Retries with backoff on rate-limit errors specifically — anything else
-// fails immediately, unretried.
 const RATE_LIMIT_PATTERN = /429|rate limit/i;
 
 export async function withRpcRetry<T>(

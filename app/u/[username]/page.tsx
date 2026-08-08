@@ -1,15 +1,13 @@
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
+import { ArtTile } from "@/components/design";
+import { Avatar } from "@/components/profile/avatar";
+import { EditableAvatar } from "@/components/profile/editable-avatar";
 import { FollowButton } from "@/components/social/follow-button";
+import { shortWallet } from "@/lib/format/wallet";
 import { createClient } from "@/lib/supabase/server";
-
-function shortWallet(address: string | null | undefined): string {
-  if (!address) return "unknown";
-  return `${address.slice(0, 4)}…${address.slice(-4)}`;
-}
 
 type ProfileSummary = {
   id: string;
@@ -17,50 +15,17 @@ type ProfileSummary = {
   avatar_url: string | null;
 };
 
-function Avatar({
-  username,
-  avatarUrl,
-  size,
-}: {
-  username: string | null;
-  avatarUrl: string | null;
-  size: number;
-}) {
-  if (avatarUrl) {
-    return (
-      <div
-        className="relative shrink-0 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-900"
-        style={{ width: size, height: size }}
-      >
-        <Image src={avatarUrl} alt={username ?? "avatar"} fill sizes={`${size}px`} className="object-cover" unoptimized />
-      </div>
-    );
-  }
-  return (
-    <div
-      aria-hidden
-      className="flex shrink-0 items-center justify-center rounded-full bg-zinc-200 font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-      style={{ width: size, height: size, fontSize: size / 2.5 }}
-    >
-      {(username ?? "?").slice(0, 1).toUpperCase()}
-    </div>
-  );
-}
-
 function ProfileLink({ profile }: { profile: ProfileSummary }) {
   if (!profile.username) {
     return (
-      <span className="flex items-center gap-2 text-sm text-zinc-500">
+      <span style={{ display: "flex", alignItems: "center", gap: "var(--space-5)", fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>
         <Avatar username={null} avatarUrl={profile.avatar_url} size={28} />
         {shortWallet(null)}
       </span>
     );
   }
   return (
-    <Link
-      href={`/u/${profile.username}`}
-      className="flex items-center gap-2 text-sm underline-offset-4 hover:underline"
-    >
+    <Link href={`/u/${profile.username}`} style={{ display: "flex", alignItems: "center", gap: "var(--space-5)", fontSize: "var(--text-md)", color: "var(--text-body)", textDecoration: "none" }}>
       <Avatar username={profile.username} avatarUrl={profile.avatar_url} size={28} />
       @{profile.username}
     </Link>
@@ -118,7 +83,7 @@ export default async function ProfilePage({
       .order("created_at", { ascending: false }),
     supabase
       .from("nfts")
-      .select("id, name, image_url, edition_number, edition_total")
+      .select("id, name, image_url")
       .eq("owner_id", profile.id)
       .order("created_at", { ascending: false })
       .limit(12),
@@ -139,99 +104,66 @@ export default async function ProfilePage({
   const nfts = nftsResult.data ?? [];
 
   return (
-    <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-16">
-      <div className="mb-6">
+    <main style={{ maxWidth: "var(--page-max)", margin: "0 auto", width: "100%", flex: 1, padding: "var(--space-11) var(--page-gutter) var(--space-13)" }}>
+      <div style={{ marginBottom: "var(--space-8)" }}>
         <BackLink />
       </div>
 
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-4">
-          <Avatar username={profile.username} avatarUrl={profile.avatar_url} size={72} />
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-7)", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-7)" }}>
+          <EditableAvatar
+            userId={profile.id}
+            username={profile.username}
+            avatarUrl={profile.avatar_url}
+            size={72}
+            editable={user?.id === profile.id}
+          />
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">@{profile.username}</h1>
-            <p className="mt-1 font-mono text-xs text-zinc-500">
-              {shortWallet(profile.wallet_address)}
-            </p>
+            <h1 style={{ font: "var(--type-h1)", letterSpacing: "var(--tracking-heading)", color: "var(--text-primary)", margin: 0 }}>@{profile.username}</h1>
+            <p style={{ margin: "var(--space-3) 0 0", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>{shortWallet(profile.wallet_address)}</p>
           </div>
         </div>
-        <FollowButton
-          profileId={profile.id}
-          viewerId={user?.id ?? null}
-          initialFollowing={viewerIsFollowing}
-        />
+        <FollowButton profileId={profile.id} viewerId={user?.id ?? null} initialFollowing={viewerIsFollowing} />
       </div>
 
-      {profile.bio && (
-        <p className="mt-6 text-zinc-600 dark:text-zinc-400">{profile.bio}</p>
-      )}
+      {profile.bio && <p style={{ font: "var(--type-body)", color: "var(--text-secondary)", margin: "var(--space-7) 0 0", maxWidth: 640, textWrap: "pretty" }}>{profile.bio}</p>}
 
-      <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2">
-        <section>
-          <h2 className="mb-4 text-sm font-semibold tracking-tight text-zinc-500">
-            Followers ({followerCount})
-          </h2>
-          {followers.length === 0 ? (
-            <p className="text-sm text-zinc-500">No followers yet.</p>
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {followers.map((follower) => (
-                <li key={follower.id}>
-                  <ProfileLink profile={follower} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section>
-          <h2 className="mb-4 text-sm font-semibold tracking-tight text-zinc-500">
-            Following ({followingCount})
-          </h2>
-          {following.length === 0 ? (
-            <p className="text-sm text-zinc-500">Not following anyone yet.</p>
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {following.map((followee) => (
-                <li key={followee.id}>
-                  <ProfileLink profile={followee} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--space-10)", marginTop: "var(--space-11)" }}>
+        {([["Followers", followerCount, followers, "No followers yet."], ["Following", followingCount, following, "Not following anyone yet."]] as const).map(
+          ([title, count, list, empty]) => (
+            <section key={title}>
+              <h2 className="sol-label" style={{ margin: "0 0 var(--space-6)", fontSize: "var(--text-md)", color: "var(--text-primary)" }}>
+                {title} ({count})
+              </h2>
+              {list.length === 0 ? (
+                <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>{empty}</p>
+              ) : (
+                <ul style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)", margin: 0, padding: 0, listStyle: "none" }}>
+                  {list.map((p) => (
+                    <li key={p.id}>
+                      <ProfileLink profile={p} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )
+        )}
       </div>
 
-      <section className="mt-16 border-t border-zinc-200 pt-10 dark:border-zinc-800">
-        <h2 className="mb-6 text-lg font-semibold tracking-tight">NFTs</h2>
+      <section style={{ marginTop: "var(--space-13)", paddingTop: "var(--space-10)", borderTop: "1px solid var(--border-subtle)" }}>
+        <h2 className="sol-label" style={{ margin: "0 0 var(--space-7)", fontSize: "var(--text-md)", color: "var(--text-primary)" }}>NFTs</h2>
         {nfts.length === 0 ? (
-          <p className="rounded-xl border border-zinc-200 p-6 text-sm text-zinc-500 dark:border-zinc-800">
-            Nothing owned yet.
-          </p>
+          <p style={{ margin: 0, padding: "var(--space-8)", borderRadius: "var(--radius-card)", border: "1px solid var(--border-subtle)", background: "var(--surface-card)", fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>Nothing owned yet.</p>
         ) : (
-          <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-4">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "var(--grid-gap)" }}>
             {nfts.map((nft) => (
-              <Link
-                key={nft.id}
-                href={`/nft/${nft.id}`}
-                className="flex flex-col overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800"
-              >
-                <div className="relative aspect-square bg-zinc-100 dark:bg-zinc-900">
-                  <Image
-                    src={nft.image_url}
-                    alt={nft.name}
-                    fill
-                    sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
-                    className="object-cover"
-                    unoptimized
-                  />
+              <Link key={nft.id} href={`/nft/${nft.id}`} style={{ display: "block", textDecoration: "none", background: "var(--surface-card)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-card)", overflow: "hidden" }}>
+                <div style={{ padding: "var(--space-4)", paddingBottom: 0 }}>
+                  <ArtTile src={nft.image_url} label={nft.name} />
                 </div>
-                <div className="p-3">
-                  <p className="truncate text-sm font-medium">{nft.name}</p>
-                  {nft.edition_total ? (
-                    <p className="text-xs text-zinc-500">
-                      #{nft.edition_number}/{nft.edition_total}
-                    </p>
-                  ) : null}
+                <div style={{ padding: "var(--space-5)" }}>
+                  <p style={{ margin: 0, fontSize: "var(--text-md)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nft.name}</p>
                 </div>
               </Link>
             ))}

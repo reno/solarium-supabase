@@ -1,9 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-// Likes and comments are ordinary off-chain rows under RLS — no chain
-// interaction, no activity rows (the activities.type check constraint only
-// allows mint/sale/gift/list/delist).
-
 export async function likeNft(
   supabase: SupabaseClient,
   { nftId, userId }: { nftId: string; userId: string }
