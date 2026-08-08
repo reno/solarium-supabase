@@ -3,6 +3,8 @@ import { publicKey, type Umi } from "npm:@metaplex-foundation/umi@1.5.1";
 import { createUmi } from "npm:@metaplex-foundation/umi-bundle-defaults@1.5.1";
 import { fetchAsset, mplCore } from "npm:@metaplex-foundation/mpl-core@1.10.0";
 
+import { rpcCall } from "../_shared/rpc.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -22,24 +24,6 @@ function getUmi(): { umi: Umi; rpcUrl: string } {
 }
 
 type Admin = ReturnType<typeof createClient>;
-
-async function rpcCall(rpcUrl: string, method: string, params: unknown[], attempt = 1): Promise<unknown> {
-  const response = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  const body = await response.json();
-  const isRateLimited =
-    response.status === 429 ||
-    (typeof body.error?.message === "string" && body.error.message.toLowerCase().includes("rate limit"));
-  if (isRateLimited && attempt < 5) {
-    await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
-    return rpcCall(rpcUrl, method, params, attempt + 1);
-  }
-  if (body.error) throw new Error(`${method}: ${body.error.message}`);
-  return body.result;
-}
 
 async function walletOf(admin: Admin, userId: string): Promise<string | null> {
   const { data } = await admin.from("profiles").select("wallet_address").eq("id", userId).maybeSingle();
@@ -85,7 +69,7 @@ async function recordMint(
   const { data: collection, error: collectionError } = await admin
     .from("collections")
     .select(
-      "id, name, description, cover_url, collection_address, creator_id, candy_machines(id, candy_machine_address, prefix_uri, items_available)"
+      "id, name, description, cover_url, collection_address, creator_id, reveal_at, candy_machines(id, candy_machine_address, prefix_uri, items_available)"
     )
     .eq("id", collectionId)
     .maybeSingle();
@@ -153,6 +137,24 @@ async function recordMint(
   const imageUrl = metadata.image ?? collection.cover_url;
   if (!imageUrl) return json(409, { error: "That item has no artwork to record." });
 
+  const itemNumber = itemNumberFromName(asset.name);
+
+  // Rarity for a manifest-based drop was ranked over the whole pool when the drop was created,
+  // so it is a lookup rather than a recount — see collection_item_rarity. Withheld entirely
+  // while the drop is unrevealed (reveal_at non-null), because handing a buyer their rank would
+  // give away what the placeholder art is hiding; the `reveal` function backfills it.
+  const unrevealed = collection.reveal_at !== null;
+  let planned: { rarity_rank: number; rarity_total: number } | null = null;
+  if (!unrevealed && itemNumber != null) {
+    const { data } = await admin
+      .from("collection_item_rarity")
+      .select("rarity_rank, rarity_total")
+      .eq("collection_id", collection.id)
+      .eq("item_number", itemNumber)
+      .maybeSingle();
+    planned = data as { rarity_rank: number; rarity_total: number } | null;
+  }
+
   const { data: nft, error: insertError } = await admin
     .from("nfts")
     .insert({
@@ -165,8 +167,10 @@ async function recordMint(
       description: collection.description,
       image_url: imageUrl,
       metadata_url: asset.uri,
-      item_number: itemNumberFromName(asset.name),
+      item_number: itemNumber,
       traits: metadata.traits,
+      rarity_rank: planned?.rarity_rank ?? null,
+      rarity_total: planned?.rarity_total ?? null,
       mint_tx: signature,
     })
     .select("id")
@@ -188,10 +192,19 @@ async function recordMint(
     tx_signature: signature,
   });
 
-  // Rarity is relative to the rest of the collection, so it is re-ranked as each item lands.
-  if (metadata.traits.length > 0) {
-    const { error: rarityError } = await admin.rpc("recompute_collection_rarity", { p_collection: collection.id });
-    if (rarityError) console.error(`recompute_collection_rarity(${collection.id}) failed: ${rarityError.message}`);
+  // Only for legacy drops with no planned ranking: this re-ranks over the items minted so far,
+  // which is a moving target until sellout. The count is what decides, not the lookup above — a
+  // single miss (a read blip, an item the manifest didn't rank) must not send a planned drop
+  // down this path and overwrite every rank it already had.
+  if (planned === null && !unrevealed && metadata.traits.length > 0) {
+    const { count: plannedRows } = await admin
+      .from("collection_item_rarity")
+      .select("item_number", { count: "exact", head: true })
+      .eq("collection_id", collection.id);
+    if (!plannedRows) {
+      const { error: rarityError } = await admin.rpc("recompute_collection_rarity", { p_collection: collection.id });
+      if (rarityError) console.error(`recompute_collection_rarity(${collection.id}) failed: ${rarityError.message}`);
+    }
   }
 
   const { count } = await admin

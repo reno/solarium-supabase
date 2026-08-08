@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
 import { FloorChartCard } from "@/components/charts/floor-chart-card";
-import { ArtTile, Badge, Card, CollectionStatsBar, Icon, type TraitGroup } from "@/components/design";
+import { ArtTile, Badge, Button, Card, CollectionStatsBar, Icon, type TraitGroup } from "@/components/design";
 import { CollectionBrowser, type BrowserItem } from "@/components/collections/collection-browser";
 import { CollectionOfferButton } from "@/components/offers/collection-offer-button";
 import { toFeedItem, type RawActivity } from "@/lib/activities/feed";
@@ -60,7 +60,7 @@ export default async function CollectionDetailPage({
   const rows = (nftRows ?? []) as NftRow[];
   const nftIds = rows.map((r) => r.id);
 
-  const [activityRes, offersCountRes, priceActsRes, topOfferRes, vol24hRes, vol7dRes, collectionOffersRes, collLevelOffersRes] = await Promise.all([
+  const [activityRes, offersCountRes, priceActsRes, topOfferRes, vol24hRes, vol7dRes, collectionOffersRes, collLevelOffersRes, machineRes] = await Promise.all([
     nftIds.length
       ? supabase
           .from("activities")
@@ -100,7 +100,15 @@ export default async function CollectionDetailPage({
       .eq("status", "active")
       .order("price_lamports", { ascending: false })
       .limit(20),
+    supabase.from("candy_machines").select("items_available, items_redeemed").eq("collection_id", id).maybeSingle(),
   ]);
+
+  // Minting itself stays on the launchpad page, which owns the guard groups, the wallet signature
+  // and the candy-mint recording — this is a way in, not a second implementation. Only offered
+  // when there is something to mint: a collection with no machine is secondary-only, and a
+  // sold-out one would send buyers to a page that can no longer sell them anything.
+  const machine = machineRes.data as { items_available: number; items_redeemed: number } | null;
+  const unminted = machine ? machine.items_available - machine.items_redeemed : 0;
 
   const items: BrowserItem[] = rows.map((row) => {
     const active = (row.listings ?? []).find((l) => l.status === "active");
@@ -229,7 +237,12 @@ export default async function CollectionDetailPage({
               )}
             </p>
           </div>
-          <div style={{ paddingBottom: "var(--space-4)", flex: "0 0 auto" }}>
+          <div style={{ display: "flex", gap: "var(--space-4)", paddingBottom: "var(--space-4)", flex: "0 0 auto" }}>
+            {unminted > 0 && (
+              <Link href={`/launchpad/${id}`} style={{ textDecoration: "none" }}>
+                <Button variant="primary" icon="sparkle">Mint an item</Button>
+              </Link>
+            )}
             <CollectionOfferButton collectionId={id} collectionName={collection.name} viewerId={user?.id ?? null} floorSol={floor != null ? String(floor) : null} />
           </div>
         </div>

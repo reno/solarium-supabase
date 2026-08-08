@@ -3,7 +3,7 @@
 import { useSelectedWalletAccount, useWalletAccountTransactionSigner } from "@solana/react";
 import type { UiWalletAccount } from "@wallet-standard/react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Badge, Button, Card, Icon, Input } from "@/components/design";
 import { useToast } from "@/components/toast/toast-provider";
@@ -11,6 +11,7 @@ import { TxFlow } from "@/components/tx/tx-flow";
 import {
   deployCandyMachine,
   estimateDeployCost,
+  readDropManifest,
   syncCandyGuards,
   MAX_DROP_SUPPLY,
   type CandyMachineRow,
@@ -49,6 +50,7 @@ export function CandyMachinePanel(props: {
   creatorId: string;
   creatorWallet: string | null;
   imageUrl: string | null;
+  revealAt: string | null;
   phases: SerializedPhase[];
   allowlist: string[];
   machine: CandyMachineRow | null;
@@ -91,6 +93,7 @@ function Inner({
   creatorId,
   creatorWallet,
   imageUrl,
+  revealAt,
   phases,
   allowlist,
   machine,
@@ -109,11 +112,36 @@ function Inner({
   const [costLamports, setCostLamports] = useState<bigint | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [manifestSupply, setManifestSupply] = useState<number | null>(null);
+  const [manifestError, setManifestError] = useState<string | null>(null);
+  const [manifestChecked, setManifestChecked] = useState(false);
+
+  // A drop created through the wizard has a manifest, and it — not a typed number — decides how
+  // many items the machine is sized for. Drops from before per-item uploads have none, and fall
+  // back to the supply field.
+  useEffect(() => {
+    let cancelled = false;
+    readDropManifest(supabase, creatorId, collectionId)
+      .then((manifest) => {
+        if (!cancelled) setManifestSupply(manifest?.supply ?? null);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setManifestError(e instanceof Error ? e.message : "Could not read this drop's items.");
+      })
+      .finally(() => {
+        if (!cancelled) setManifestChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, creatorId, collectionId]);
 
   const parsedSupply = Number(supply);
-  const supplyValid = Number.isInteger(parsedSupply) && parsedSupply >= 1 && parsedSupply <= MAX_DROP_SUPPLY;
+  const typedSupplyValid = Number.isInteger(parsedSupply) && parsedSupply >= 1 && parsedSupply <= MAX_DROP_SUPPLY;
+  const supplyValid = manifestSupply != null || typedSupplyValid;
   const remaining = machine ? machine.itemsAvailable - machine.itemsLoaded : 0;
-  const deployedSupply = machine?.itemsAvailable ?? (supplyValid ? parsedSupply : 0);
+  const targetSupply = machine ? machine.itemsAvailable : (manifestSupply ?? (typedSupplyValid ? parsedSupply : 0));
+  const deployedSupply = targetSupply;
 
   const openDeploy = async () => {
     setError(null);
@@ -130,7 +158,7 @@ function Inner({
       const cost = machine
         ? 0n
         : await estimateDeployCost(umi, {
-            supply: parsedSupply,
+            supply: targetSupply,
             collectionName,
             needsCollection: !collectionAddress,
           });
@@ -221,7 +249,7 @@ function Inner({
             </p>
           )}
           <div style={{ display: "flex", alignItems: "flex-end", gap: "var(--space-6)" }}>
-            <div style={{ flex: 1, maxWidth: 200 }}>
+            <div style={{ flex: 1, maxWidth: 260 }}>
               <label
                 style={{
                   display: "block",
@@ -235,12 +263,44 @@ function Inner({
               >
                 Supply
               </label>
-              <Input numeric placeholder="100" value={supply} onChange={(e) => setSupply(e.target.value)} />
+              {!manifestChecked ? (
+                <div style={{ display: "flex", alignItems: "center", height: "var(--control-h-md)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>
+                  Counting your items…
+                </div>
+              ) : manifestSupply != null ? (
+                <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-3)", height: "var(--control-h-md)" }}>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-lg)", color: "var(--text-primary)" }}>
+                    {manifestSupply}
+                  </span>
+                  <span style={{ fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>
+                    item{manifestSupply === 1 ? "" : "s"} uploaded
+                  </span>
+                </div>
+              ) : (
+                <Input numeric placeholder="100" value={supply} onChange={(e) => setSupply(e.target.value)} />
+              )}
             </div>
-            <Button variant="primary" icon="rocket" loading={busy} disabled={busy || phases.length === 0} onClick={openDeploy}>
+            <Button
+              variant="primary"
+              icon="rocket"
+              loading={busy}
+              disabled={busy || phases.length === 0 || !manifestChecked}
+              onClick={openDeploy}
+            >
               Deploy candy machine
             </Button>
           </div>
+          {manifestSupply != null && (
+            <p style={{ margin: "var(--space-5) 0 0", fontSize: "var(--text-2xs)", color: "var(--text-tertiary)", textWrap: "pretty" }}>
+              Supply comes from the artwork you uploaded — each item keeps its own image and traits, and the
+              machine hands them out in random order.
+            </p>
+          )}
+          {manifestError && (
+            <p style={{ margin: "var(--space-5) 0 0", fontSize: "var(--text-2xs)", color: "var(--price-down)" }}>
+              {manifestError}
+            </p>
+          )}
           {phases.length === 0 && (
             <p style={{ margin: "var(--space-5) 0 0", fontSize: "var(--text-2xs)", color: "var(--text-tertiary)" }}>
               Add at least one phase first — the guards are built from your phases.
@@ -290,7 +350,8 @@ function Inner({
                 creatorId,
                 creatorWallet,
                 imageUrl,
-                supply: machine ? machine.itemsAvailable : parsedSupply,
+                revealAt,
+                supply: targetSupply,
                 phases: deserializePhases(phases),
                 allowlist,
                 existing: machine,
@@ -298,7 +359,7 @@ function Inner({
               });
               return {
                 signature: result.signatures[result.signatures.length - 1],
-                summary: `${result.itemsLoaded} of ${machine?.itemsAvailable ?? parsedSupply} items loaded.`,
+                summary: `${result.itemsLoaded} of ${targetSupply} items loaded.`,
               };
             },
             successTitle: machine ? "Items loaded" : "Drop is on chain",

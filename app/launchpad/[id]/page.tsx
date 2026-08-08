@@ -5,9 +5,11 @@ import { BackLink } from "@/components/back-link";
 import { ArtTile, Badge, Button, Card, Icon } from "@/components/design";
 import { CandyMachinePanel, type SerializedPhase } from "@/components/launchpad/candy-machine-panel";
 import { CandyMintButton } from "@/components/launchpad/candy-mint-button";
+import { PendingMintNotice } from "@/components/launchpad/pending-mint-notice";
 import { Countdown } from "@/components/launchpad/countdown";
 import { BalanceEligibilityLine } from "@/components/launchpad/mint-eligibility";
 import { RemindMe } from "@/components/launchpad/remind-me";
+import { RevealPanel } from "@/components/launchpad/reveal-panel";
 import { LaunchpadSetup } from "@/components/launchpad/launchpad-setup";
 import { OffersList } from "@/components/offers/offers-list";
 import { mapCollectionOffers, mapOffers, type OfferEntry, type RawCollectionOffer, type RawOffer } from "@/lib/offers/map";
@@ -331,6 +333,7 @@ export default async function LaunchpadDetailPage({
               </div>
 
               <div style={{ marginTop: "var(--space-8)" }}>
+                <PendingMintNotice collectionId={id} />
                 {panelState === "live" && machine && active?.groupLabel && collection.collection_address && creator?.wallet_address ? (
                   <CandyMintButton
                     collectionId={id}
@@ -443,12 +446,14 @@ export default async function LaunchpadDetailPage({
                   creatorId={collection.creator_id}
                   creatorWallet={creator?.wallet_address ?? null}
                   imageUrl={collection.cover_url ?? null}
+                  revealAt={collection.reveal_at ?? null}
                   phases={serializedPhases}
                   allowlist={allowlist}
                   machine={machine}
                   hasMintedItems={items.length > 0}
                   defaultSupply={supplyParam}
                 />
+                <RevealPanel collectionId={id} revealAt={collection.reveal_at ?? null} now={now} />
               </div>
               <div>
                 <div className="sol-label" style={{ marginBottom: "var(--space-6)" }}>Mint phases &amp; allowlist</div>

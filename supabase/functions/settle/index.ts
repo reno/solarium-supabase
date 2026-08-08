@@ -16,6 +16,7 @@ import {
   transfer,
 } from "npm:@metaplex-foundation/mpl-core@1.10.0";
 import { feeOf } from "../_shared/fee.ts";
+import { rpcCall } from "../_shared/rpc.ts";
 
 const SYSTEM_PROGRAM = publicKey("11111111111111111111111111111111");
 
@@ -206,30 +207,6 @@ async function buildSettlementResponse(admin: Admin, p: SettleParams): Promise<R
     blockhash: blockhash.blockhash,
     lastValidBlockHeight: String(blockhash.lastValidBlockHeight),
   });
-}
-
-async function rpcCall(
-  rpcUrl: string,
-  method: string,
-  params: unknown[],
-  attempt = 1
-): Promise<unknown> {
-  const response = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  const body = await response.json();
-  const isRateLimited =
-    response.status === 429 ||
-    (typeof body.error?.message === "string" &&
-      body.error.message.toLowerCase().includes("rate limit"));
-  if (isRateLimited && attempt < 5) {
-    await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
-    return rpcCall(rpcUrl, method, params, attempt + 1);
-  }
-  if (body.error) throw new Error(`${method}: ${body.error.message}`);
-  return body.result;
 }
 
 async function verifySettlement(

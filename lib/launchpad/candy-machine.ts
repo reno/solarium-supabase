@@ -38,6 +38,17 @@ import {
   uriSettings,
   type PhaseInput,
 } from "@/lib/launchpad/candy-guards";
+import {
+  dropFolder,
+  itemAttributes,
+  manifestPath,
+  parseManifest,
+  MAX_DROP_SUPPLY,
+  type DropManifest,
+  type ManifestItem,
+} from "@/lib/launchpad/manifest";
+import { savePendingMint } from "@/lib/launchpad/pending-mints";
+import { publicUrl, runPooled, uploadJson } from "@/lib/launchpad/upload";
 import { getSettlementAuthority } from "@/lib/listings/listings";
 import { feeOf } from "@/supabase/functions/_shared/fee";
 import { buildNftMetadata } from "@/lib/mint/metadata";
@@ -47,7 +58,7 @@ import { withRpcRetry } from "@/lib/solana/retry";
 export type DeployStage = "metadata" | "collection" | "machine" | "items" | "recording";
 export type MintStage = "allowlist" | "signing" | "sending" | "confirming" | "recording";
 
-export const MAX_DROP_SUPPLY = 250;
+export { MAX_DROP_SUPPLY };
 
 const VISIBILITY_ATTEMPTS = 45;
 const VISIBILITY_DELAY_MS = 2000;
@@ -104,6 +115,42 @@ function merkleRootFor(allowlist: string[]): Uint8Array | null {
   return allowlist.length > 0 ? getMerkleRoot(allowlist) : null;
 }
 
+async function loadManifest(supabase: SupabaseClient, folder: string): Promise<DropManifest | null> {
+  let response: Response;
+  try {
+    response = await fetch(publicUrl(supabase, manifestPath(folder)), { cache: "no-store" });
+  } catch (e) {
+    // "No manifest" and "couldn't tell" must not collapse into the same answer: falling back on
+    // a network blip would point every item at the collection cover, and config lines are
+    // written once — there is no fixing it after the machine is loaded.
+    throw new Error(`Could not read this drop's item manifest: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  // Storage answers 400 or 404 for an object that isn't there, depending on the path.
+  if (response.status === 404 || response.status === 400) return null;
+  if (!response.ok) throw new Error(`Could not read this drop's item manifest (HTTP ${response.status}).`);
+  return parseManifest(await response.json());
+}
+
+export function readDropManifest(
+  supabase: SupabaseClient,
+  creatorId: string,
+  collectionId: string
+): Promise<DropManifest | null> {
+  return loadManifest(supabase, dropFolder(creatorId, collectionId));
+}
+
+// A drop created before per-item uploads existed has no manifest. It still deploys: every item
+// points at the collection cover and carries no traits, which is what this did before — and an
+// empty trait list earns a null rarity rank rather than a rank derived from nothing.
+function coverOnlyItems(supply: number, imageUrl: string, imageType: string): ManifestItem[] {
+  return Array.from({ length: supply }, (_, position) => ({
+    index: position + 1,
+    image: imageUrl,
+    imageType,
+    traits: [],
+  }));
+}
+
 export type CandyMachineRow = {
   id: string;
   candyMachineAddress: string;
@@ -126,6 +173,8 @@ export type DeployParams = {
   creatorWallet: string;
   imageUrl: string;
   imageType?: string;
+  // Set = this drop hasn't been revealed, so the item metadata is written as placeholders.
+  revealAt: string | null;
   supply: number;
   phases: PhaseInput[];
   allowlist: string[];
@@ -150,13 +199,16 @@ export async function deployCandyMachine(params: DeployParams): Promise<DeployRe
     creatorId,
     creatorWallet,
     imageUrl,
-    supply,
+    revealAt,
     phases,
     allowlist,
     existing,
     onStage,
   } = params;
   const umi = withCandyMachine(params.umi);
+  // Reassigned from the manifest below, which is the only thing that knows how many items
+  // actually exist to load.
+  let supply = params.supply;
 
   if (supply < 1 || supply > MAX_DROP_SUPPLY) {
     throw new Error(`Supply must be between 1 and ${MAX_DROP_SUPPLY}.`);
@@ -174,29 +226,51 @@ export async function deployCandyMachine(params: DeployParams): Promise<DeployRe
 
   if (!row) {
     onStage?.("metadata");
-    const dropId = crypto.randomUUID();
-    const folder = `${creatorId}/${dropId}`;
+    const folder = dropFolder(creatorId, collectionId);
     const imageType = params.imageType ?? "image/png";
-    const { prefixName, nameLength } = nameSettings(collectionName, supply);
-    const upload = async (file: string, body: unknown) => {
-      const { error } = await supabase.storage
-        .from("nft-media")
-        .upload(`${folder}/${file}`, new Blob([JSON.stringify(body, null, 2)], { type: "application/json" }), {
-          contentType: "application/json",
-          upsert: true,
-        });
-      if (error) throw new Error(`Metadata upload failed on ${file}: ${error.message}`);
-      return supabase.storage.from("nft-media").getPublicUrl(`${folder}/${file}`).data.publicUrl;
-    };
 
-    for (let n = 1; n <= supply; n++) {
-      await upload(`${n}.json`, buildNftMetadata({ name: `${prefixName}${n}`, description, imageUrl, imageType }));
+    const manifest = await loadManifest(supabase, folder);
+    // The manifest wins over whatever supply the caller asked for: it is what will actually be
+    // written as config lines, and a machine sized to any other number can never be filled.
+    if (manifest) supply = manifest.supply;
+    if (supply < 1 || supply > MAX_DROP_SUPPLY) {
+      throw new Error(`This drop has ${supply} items, and a drop must have between 1 and ${MAX_DROP_SUPPLY}.`);
     }
-    const collectionMetadataUrl = await upload(
-      "collection.json",
-      buildNftMetadata({ name: collectionName, description, imageUrl, imageType })
+    const items = manifest?.items ?? coverOnlyItems(supply, imageUrl, imageType);
+    const { prefixName, nameLength } = nameSettings(collectionName, supply);
+
+    // Each item's own art and attributes live only in this JSON — the config line carries just
+    // `{n}.json`. candy-mint reads it back into nfts.image_url and nfts.traits.
+    //
+    // A drop with a reveal time writes placeholders instead, and the `reveal` function rewrites
+    // these same files afterwards. That is what makes a delayed reveal mean anything: config
+    // lines are public on chain and the program's index selection is only weakly random, so a
+    // bot that can read which index holds the gold can simulate a mint and abort when it
+    // doesn't like the answer. Publishing no art and no attributes until the drop closes leaves
+    // it nothing to aim at. Nothing on chain changes at reveal — only these URIs' contents.
+    const hidden = revealAt != null;
+    await runPooled(items, async (item) => {
+      await uploadJson(
+        supabase,
+        `${folder}/${item.index}.json`,
+        buildNftMetadata({
+          name: `${prefixName}${item.index}`,
+          description,
+          imageUrl: hidden ? imageUrl : item.image,
+          imageType: hidden ? imageType : item.imageType,
+          attributes: hidden ? [] : itemAttributes(item),
+        }),
+        `Item ${item.index} metadata`
+      );
+    });
+
+    const collectionMetadataUrl = await uploadJson(
+      supabase,
+      `${folder}/collection.json`,
+      buildNftMetadata({ name: collectionName, description, imageUrl, imageType }),
+      "Collection metadata"
     );
-    const firstItemUrl = supabase.storage.from("nft-media").getPublicUrl(`${folder}/1.json`).data.publicUrl;
+    const firstItemUrl = publicUrl(supabase, `${folder}/1.json`);
     const prefixUri = firstItemUrl.slice(0, firstItemUrl.length - "1.json".length);
     const uri = uriSettings(prefixUri, supply);
 
@@ -484,10 +558,13 @@ export async function mintFromCandyMachine(params: CandyMintParams): Promise<Can
     );
     nftId = result?.nftId ?? null;
   } catch (e) {
+    // The item is already theirs — only the off-chain row is missing, and re-minting would buy a
+    // second item rather than recover this one. Keep it so the drop page can offer a retry.
+    savePendingMint({ collectionId, assetAddress: asset.publicKey, signature });
     throw new Error(
       `Minted ${asset.publicKey} on chain (${signature}), but recording it failed: ${
         e instanceof Error ? e.message : String(e)
-      }`
+      }. It is yours either way — reload the drop page to finish recording it.`
     );
   }
   return { assetAddress: asset.publicKey, signature, nftId };
