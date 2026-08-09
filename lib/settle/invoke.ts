@@ -11,8 +11,8 @@ export async function invokeFunction(
     if (error instanceof FunctionsHttpError) {
       const details = await error.context
         .json()
-        .catch(() => null as { error?: string; message?: string } | null);
-      throw new Error(details?.error ?? details?.message ?? fallbackMessage);
+        .catch(() => null as { error?: string } | null);
+      throw new Error(details?.error ?? fallbackMessage);
     }
     throw error;
   }

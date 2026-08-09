@@ -12,11 +12,12 @@ import { Button } from "@/components/design";
 import { TxFlow, type TxStage } from "@/components/tx/tx-flow";
 import { useToast } from "@/components/toast/toast-provider";
 import { buyListing } from "@/lib/listings/buy";
+import { solToLamports } from "@/lib/solana/lamports";
 import { explorerTxUrl, getSolanaChain } from "@/lib/solana/config";
 import { useSolBalance } from "@/lib/solana/use-balance";
 import { createUmiForWallet } from "@/lib/solana/umi";
 import { createClient } from "@/lib/supabase/client";
-import { FEE_LABEL, FEE_RATE } from "@/supabase/functions/_shared/fee";
+import { FEE_LABEL, feeOf } from "@/supabase/functions/_shared/fee";
 
 export const BUY_STEPS: TxStage[] = [
   { key: "preparing", label: "Verifying listing" },
@@ -113,11 +114,15 @@ function BuyButtonInner({
     );
   }
 
-  const priceNum = parseFloat(priceSol);
+  const priceLamports = solToLamports(priceSol);
+  const feeLamports = feeOf(priceLamports);
+  const royaltyLamports = (priceLamports * BigInt(royaltyBps ?? 0)) / 10000n;
+  const totalLamports = priceLamports + feeLamports + royaltyLamports;
+
   const royPct = (royaltyBps ?? 0) / 100;
-  const feeSol = priceNum * FEE_RATE;
-  const roySol = (priceNum * (royaltyBps ?? 0)) / 10000;
-  const totalNum = priceNum + feeSol + roySol;
+  const feeSol = Number(feeLamports) / 1e9;
+  const roySol = Number(royaltyLamports) / 1e9;
+  const totalNum = Number(totalLamports) / 1e9;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
@@ -146,7 +151,14 @@ function BuyButtonInner({
             balanceSol: balanceLamports != null ? Number(balanceLamports) / 1e9 : null,
             needSol: totalNum,
             stages: BUY_STEPS,
-            perform: (onStage) => buyListing({ supabase, umi, listingId, onStage: onStage as (s: string) => void }),
+            perform: (onStage) =>
+              buyListing({
+                supabase,
+                umi,
+                listingId,
+                maxLamports: totalLamports,
+                onStage: onStage as (s: string) => void,
+              }),
             successTitle: "Purchase confirmed",
             successDetail: itemName ? `${itemName} is now yours.` : undefined,
             explorerUrl: explorerTxUrl,

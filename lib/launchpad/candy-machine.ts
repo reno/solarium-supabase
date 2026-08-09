@@ -52,6 +52,7 @@ import { savePendingMint } from "@/lib/launchpad/pending-mints";
 import { publicUrl, runPooled, uploadJson } from "@/lib/launchpad/upload";
 import { getSettlementAuthority } from "@/lib/listings/listings";
 import { feeOf } from "@/supabase/functions/_shared/fee";
+import { sha256Hex } from "@/supabase/functions/_shared/tx";
 import { buildNftMetadata } from "@/lib/mint/metadata";
 import { invokeFunction } from "@/lib/settle/invoke";
 import { withRpcRetry } from "@/lib/solana/retry";
@@ -61,16 +62,9 @@ export type MintStage = "allowlist" | "signing" | "sending" | "confirming" | "re
 
 export { MAX_DROP_SUPPLY };
 
-// Both waits below back off exponentially rather than polling at a flat interval. The happy
-// path resolves on the first or second try, so a short first delay finishes sooner *and* spends
-// fewer requests than a flat 2s poll — which matters because a free-tier RPC bills per request
-// and a deploy runs these loops several times.
 const VISIBILITY_TIMEOUT_MS = 90_000;
 const POLL_INITIAL_DELAY_MS = 250;
 const POLL_MAX_DELAY_MS = 4000;
-// A blockhash is valid for ~150 slots (60-90s). Rather than spend a getBlockHeight per second
-// to watch for its expiry — which is what umi's blockhash strategy does — treat wall clock as
-// the proxy and poll the signature itself.
 const CONFIRM_TIMEOUT_MS = 90_000;
 const CONFIRM_INITIAL_DELAY_MS = 500;
 const CONFIRM_MAX_DELAY_MS = 2000;
@@ -83,8 +77,6 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// At "confirmed" commitment an account written by one transaction is not necessarily
-// readable by the next RPC call, and each deploy step reads what the previous one wrote.
 async function waitForAccount(umi: Umi, address: PublicKey, label: string): Promise<void> {
   const deadline = Date.now() + VISIBILITY_TIMEOUT_MS;
   let wait = POLL_INITIAL_DELAY_MS;
@@ -98,10 +90,6 @@ async function waitForAccount(umi: Umi, address: PublicKey, label: string): Prom
   }
 }
 
-// Poll the signature rather than using umi's blockhash strategy, which delegates to web3.js and
-// polls getBlockHeight once a second until the blockhash expires — up to 90 requests for a
-// transaction that usually lands in two. A 429 in there is also swallowed by web3.js and simply
-// retried forever; here it surfaces to withRpcRetry.
 async function confirmSignature(
   umi: Umi,
   signatureBytes: TransactionSignature,
@@ -128,8 +116,6 @@ async function confirmSignature(
   }
 }
 
-// Wallet signs first, or later keypair signatures break: some wallets modify the
-// transaction while signing, invalidating signatures applied before them.
 function identityFirst(signers: Signer[], umi: Umi): Signer[] {
   return [...signers].sort((a, b) => {
     if (a.publicKey === umi.identity.publicKey) return -1;
@@ -156,33 +142,33 @@ function merkleRootFor(allowlist: string[]): Uint8Array | null {
   return allowlist.length > 0 ? getMerkleRoot(allowlist) : null;
 }
 
-async function loadManifest(supabase: SupabaseClient, folder: string): Promise<DropManifest | null> {
+type LoadedManifest = { manifest: DropManifest; sha256: string };
+
+async function loadManifest(supabase: SupabaseClient, folder: string): Promise<LoadedManifest | null> {
   let response: Response;
   try {
     response = await fetch(publicUrl(supabase, manifestPath(folder)), { cache: "no-store" });
   } catch (e) {
-    // "No manifest" and "couldn't tell" must not collapse into the same answer: falling back on
-    // a network blip would point every item at the collection cover, and config lines are
-    // written once — there is no fixing it after the machine is loaded.
     throw new Error(`Could not read this drop's item manifest: ${e instanceof Error ? e.message : String(e)}`);
   }
-  // Storage answers 400 or 404 for an object that isn't there, depending on the path.
   if (response.status === 404 || response.status === 400) return null;
   if (!response.ok) throw new Error(`Could not read this drop's item manifest (HTTP ${response.status}).`);
-  return parseManifest(await response.json());
+  const text = await response.text();
+  return {
+    manifest: parseManifest(JSON.parse(text)),
+    sha256: await sha256Hex(new TextEncoder().encode(text)),
+  };
 }
 
-export function readDropManifest(
+export async function readDropManifest(
   supabase: SupabaseClient,
   creatorId: string,
   collectionId: string
 ): Promise<DropManifest | null> {
-  return loadManifest(supabase, dropFolder(creatorId, collectionId));
+  const loaded = await loadManifest(supabase, dropFolder(creatorId, collectionId));
+  return loaded?.manifest ?? null;
 }
 
-// A drop created before per-item uploads existed has no manifest. It still deploys: every item
-// points at the collection cover and carries no traits, which is what this did before — and an
-// empty trait list earns a null rarity rank rather than a rank derived from nothing.
 function coverOnlyItems(supply: number, imageUrl: string, imageType: string): ManifestItem[] {
   return Array.from({ length: supply }, (_, position) => ({
     index: position + 1,
@@ -214,7 +200,6 @@ export type DeployParams = {
   creatorWallet: string;
   imageUrl: string;
   imageType?: string;
-  // Set = this drop hasn't been revealed, so the item metadata is written as placeholders.
   revealAt: string | null;
   supply: number;
   phases: PhaseInput[];
@@ -247,8 +232,6 @@ export async function deployCandyMachine(params: DeployParams): Promise<DeployRe
     onStage,
   } = params;
   const umi = withCandyMachine(params.umi);
-  // Reassigned from the manifest below, which is the only thing that knows how many items
-  // actually exist to load.
   let supply = params.supply;
 
   if (supply < 1 || supply > MAX_DROP_SUPPLY) {
@@ -264,15 +247,16 @@ export async function deployCandyMachine(params: DeployParams): Promise<DeployRe
   const signatures: string[] = [];
   let collectionAddress = params.collectionAddress;
   let row = existing ?? null;
+  let manifestSha256: string | null = null;
 
   if (!row) {
     onStage?.("metadata");
     const folder = dropFolder(creatorId, collectionId);
     const imageType = params.imageType ?? "image/png";
 
-    const manifest = await loadManifest(supabase, folder);
-    // The manifest wins over whatever supply the caller asked for: it is what will actually be
-    // written as config lines, and a machine sized to any other number can never be filled.
+    const loaded = await loadManifest(supabase, folder);
+    const manifest = loaded?.manifest ?? null;
+    manifestSha256 = loaded?.sha256 ?? null;
     if (manifest) supply = manifest.supply;
     if (supply < 1 || supply > MAX_DROP_SUPPLY) {
       throw new Error(`This drop has ${supply} items, and a drop must have between 1 and ${MAX_DROP_SUPPLY}.`);
@@ -280,15 +264,6 @@ export async function deployCandyMachine(params: DeployParams): Promise<DeployRe
     const items = manifest?.items ?? coverOnlyItems(supply, imageUrl, imageType);
     const { prefixName, nameLength } = nameSettings(collectionName, supply);
 
-    // Each item's own art and attributes live only in this JSON — the config line carries just
-    // `{n}.json`. candy-mint reads it back into nfts.image_url and nfts.traits.
-    //
-    // A drop with a reveal time writes placeholders instead, and the `reveal` function rewrites
-    // these same files afterwards. That is what makes a delayed reveal mean anything: config
-    // lines are public on chain and the program's index selection is only weakly random, so a
-    // bot that can read which index holds the gold can simulate a mint and abort when it
-    // doesn't like the answer. Publishing no art and no attributes until the drop closes leaves
-    // it nothing to aim at. Nothing on chain changes at reveal — only these URIs' contents.
     const hidden = revealAt != null;
     await runPooled(items, async (item) => {
       await uploadJson(
@@ -373,6 +348,7 @@ export async function deployCandyMachine(params: DeployParams): Promise<DeployRe
         prefix_name: prefixName,
         prefix_uri: uri.prefixUri,
         deploy_tx: deployTx,
+        manifest_sha256: manifestSha256,
       })
       .select("id")
       .single();
@@ -433,8 +409,6 @@ async function writeGroupLabels(supabase: SupabaseClient, phases: PhaseInput[]):
   }
 }
 
-// Config lines are tiny on the wire, so compute — not transaction size — is the ceiling:
-// ~4.4k CU each, and the 200k default runs out around 45 lines mid-batch.
 const COMPUTE_UNITS_PER_CONFIG_LINE = 5_000;
 const COMPUTE_UNITS_BASE = 40_000;
 const MAX_TRANSACTION_COMPUTE_UNITS = 1_400_000;
@@ -442,8 +416,6 @@ const MAX_CONFIG_LINES_PER_TRANSACTION = Math.floor(
   (MAX_TRANSACTION_COMPUTE_UNITS - COMPUTE_UNITS_BASE) / COMPUTE_UNITS_PER_CONFIG_LINE
 );
 
-// Used to both measure a chunk and send it — they must be the same shape, or the
-// compute-budget instruction's own bytes go missing from the fit calculation.
 function addConfigLinesBuilder(
   umi: Umi,
   candyMachine: PublicKey,
@@ -599,8 +571,6 @@ export async function mintFromCandyMachine(params: CandyMintParams): Promise<Can
     );
     nftId = result?.nftId ?? null;
   } catch (e) {
-    // The item is already theirs — only the off-chain row is missing, and re-minting would buy a
-    // second item rather than recover this one. Keep it so the drop page can offer a retry.
     savePendingMint({ collectionId, assetAddress: asset.publicKey, signature });
     throw new Error(
       `Minted ${asset.publicKey} on chain (${signature}), but recording it failed: ${

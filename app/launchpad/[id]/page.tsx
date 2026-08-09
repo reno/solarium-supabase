@@ -105,8 +105,6 @@ export default async function LaunchpadDetailPage({
     : null;
   const allowlist = (allowlistResult.data ?? []).map((a: { wallet_address: string }) => a.wallet_address);
 
-  // Items only exist once buyers mint them out of the candy machine, so supply comes from the
-  // machine's own counters. A collection without one has nothing to mint yet.
   const items = itemsResult.data ?? [];
   const total = machine?.itemsAvailable ?? 0;
   const minted = machine?.itemsRedeemed ?? 0;
@@ -137,8 +135,6 @@ export default async function LaunchpadDetailPage({
   }
 
   const candyAvailable = machine ? Math.max(0, Math.min(machine.itemsLoaded, machine.itemsAvailable) - machine.itemsRedeemed) : 0;
-  // No machine deployed, or one whose config lines aren't fully loaded: there is nothing a
-  // buyer could mint even while a phase window is open.
   const notOpenYet = machine ? candyAvailable === 0 && machine.itemsLoaded < machine.itemsAvailable : true;
 
   let disabledReason: string | null = null;

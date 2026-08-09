@@ -13,6 +13,9 @@ import {
   traitLayersOf,
   traitPlanIssue,
   ABSENT_TRAIT_VALUE,
+  MAX_DROP_SUPPLY,
+  MAX_TRAITS_PER_ITEM,
+  MAX_TRAIT_FIELD,
   type ManifestTrait,
 } from "./manifest";
 
@@ -81,8 +84,6 @@ describe("parseTraitsFile", () => {
 });
 
 describe("normalizeTraits", () => {
-  // An omitted layer would otherwise cost the item a term in recompute_collection_rarity's
-  // sum-of-inverse-frequency score, ranking it less rare purely for having fewer traits.
   it("gives every item every layer, writing absences as None", () => {
     const filled = normalizeTraits(
       new Map<number, ManifestTrait[]>([
@@ -168,6 +169,37 @@ describe("parseManifest", () => {
   it("rejects a manifest from a future version", () => {
     expect(() => parseManifest({ version: 2, supply: 0, items: [] })).toThrow(/version 2/);
   });
+
+  it("rejects a manifest larger than the supply cap", () => {
+    const oversized = {
+      version: 1,
+      supply: MAX_DROP_SUPPLY + 1,
+      items: Array.from({ length: MAX_DROP_SUPPLY + 1 }, (_, position) => ({
+        index: position + 1,
+        image: `https://example.test/${position + 1}.png`,
+        imageType: "image/png",
+        traits: [],
+      })),
+    };
+    expect(() => parseManifest(oversized)).toThrow(
+      new RegExp(`lists ${MAX_DROP_SUPPLY + 1} items; the maximum is ${MAX_DROP_SUPPLY}`)
+    );
+  });
+
+  it("bounds the traits an item can carry", () => {
+    const manifest = buildManifest({ images: images(1), traits: null });
+    const parsed = parseManifest({
+      ...manifest,
+      items: [
+        {
+          ...manifest.items[0],
+          traits: Array.from({ length: 500 }, (_, i) => ({ trait: `t${i}`, value: "x".repeat(1000) })),
+        },
+      ],
+    });
+    expect(parsed.items[0].traits).toHaveLength(MAX_TRAITS_PER_ITEM);
+    expect(parsed.items[0].traits[0].value.length).toBe(MAX_TRAIT_FIELD);
+  });
 });
 
 describe("rankManifest", () => {
@@ -175,7 +207,6 @@ describe("rankManifest", () => {
     rankManifest(buildManifest({ images: images(count), traits: parseTraitsFile(csv, "t.csv") }));
 
   it("ranks the scarcest trait first, over the whole pool rather than what has minted", () => {
-    // Gold 1/4, Silver 1/4, None 2/4 — the two commons tie and break on item number.
     const result = ranked("Halo\nGold\nSilver\nNone\nNone\n", 4);
     expect(result.map((r) => r.index)).toEqual([1, 2, 3, 4]);
     expect(result.map((r) => r.rank)).toEqual([1, 2, 3, 4]);
@@ -183,7 +214,6 @@ describe("rankManifest", () => {
   });
 
   it("scores an item by summed inverse frequency across layers", () => {
-    // Background: Void 2/2 → 2/2 = 1. Halo: Gold 1/2 → 2/1 = 2, Silver 1/2 → 2.
     const result = ranked("Background,Halo\nVoid,Gold\nVoid,Silver\n", 2);
     expect(result.map((r) => r.score)).toEqual([3, 3]);
   });
@@ -195,8 +225,6 @@ describe("rankManifest", () => {
     expect(result[0].score).toBeGreaterThan(result[1].score);
   });
 
-  // An explicit "None" is a value like any other, so absence is itself rankable — that is the
-  // whole reason normalizeTraits fills it in.
   it("treats a rare absence as rare", () => {
     const result = rankManifest(
       buildManifest({ images: images(3), traits: parseTraitsFile("item,Halo\n1,Gold\n2,Gold\n3,\n", "t.csv") })
@@ -208,10 +236,6 @@ describe("rankManifest", () => {
     expect(rankManifest(buildManifest({ images: images(3), traits: null }))).toEqual([]);
   });
 
-  // The two rankings have to agree, because a legacy drop can be ranked by the SQL and a
-  // manifest drop by this function, and both surface as nfts.rarity_rank. These four items were
-  // run through recompute_collection_rarity() on a local Postgres and came back 2, 3, 1, 4 —
-  // including the tie between items 1 and 2, which both sides break on a stable key.
   it("agrees with recompute_collection_rarity on the same traits", () => {
     const result = rankManifest(
       buildManifest({
@@ -276,15 +300,11 @@ describe("planTraits", () => {
     expect(layer.absent).toBe(190);
   });
 
-  // The wizard shows these counts precisely so a share too small to buy an item is visible
-  // rather than silently promised.
   it("shows a share too small to reach one item as zero", () => {
     const [layer] = planTraits([{ trait: "Halo", value: "Gold", percent: 1 }], 20);
     expect(layer.values[0].count).toBe(0);
   });
 
-  // 1% of 50 items is half an item, and half an item is a bigger fraction than the leftover's —
-  // rounding it up to one is what keeps a rare value from vanishing on a small drop.
   it("rounds a near-miss share up rather than dropping the value", () => {
     const [layer] = planTraits([{ trait: "Halo", value: "Gold", percent: 1 }], 50);
     expect(layer.values[0].count).toBe(1);
@@ -312,8 +332,6 @@ describe("generateTraits", () => {
   const countOf = (traits: Map<number, ManifestTrait[]>, trait: string, value: string) =>
     [...traits.values()].filter((list) => list.some((t) => t.trait === trait && t.value === value)).length;
 
-  // A percentage is a quota over a pool the machine mints exactly once, not a per-mint chance:
-  // sampling would give 7 or 13 Golds out of 200 and make the advertised rarity a lie.
   it("hits the requested share exactly, not on average", () => {
     const traits = generateTraits(weights, 200)!;
     expect(countOf(traits, "Halo", "Gold")).toBe(10);
@@ -336,8 +354,6 @@ describe("generateTraits", () => {
     expect(generateTraits(weights, 40)).toEqual(generateTraits(weights, 40));
   });
 
-  // Dealing every layer in plan order would stack each layer's rarest value on item 1 — one
-  // golden ticket rather than a distribution.
   it("shuffles each layer independently", () => {
     const traits = generateTraits(
       [
@@ -355,7 +371,6 @@ describe("generateTraits", () => {
     const manifest = buildManifest({ images: images(20), traits: generateTraits(weights, 20) });
     const ranked = rankManifest(manifest);
     expect(ranked).toHaveLength(20);
-    // Gold is 5% of 20 — one item — so it tops the ranking.
     const gold = manifest.items.find((item) => item.traits.some((t) => t.value === "Gold"))!;
     expect(ranked[0].index).toBe(gold.index);
   });

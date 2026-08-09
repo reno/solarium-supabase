@@ -7,6 +7,8 @@ export const SOLANA_SIGN_IN_FEATURE = "solana:signIn";
 export const SIGN_IN_STATEMENT =
   "Sign in to Solarium with your Solana wallet.";
 
+const SIGN_IN_TTL_MS = 5 * 60 * 1000;
+
 type SignIn = NonNullable<SolanaWallet["signIn"]>;
 
 export function accountSupportsSignIn(account: UiWalletAccount): boolean {
@@ -31,24 +33,23 @@ export async function signInWithSolanaAccount(
   supabase: SupabaseClient,
   account: UiWalletAccount
 ): Promise<{ needsOnboarding: boolean }> {
+  const now = Date.now();
   const { data, error } = await supabase.auth.signInWithWeb3({
     chain: "solana",
     statement: SIGN_IN_STATEMENT,
     wallet: toSupabaseSolanaWallet(account),
+    options: {
+      signInWithSolana: {
+        issuedAt: new Date(now).toISOString(),
+        expirationTime: new Date(now + SIGN_IN_TTL_MS).toISOString(),
+      },
+    },
   });
   if (error) throw error;
 
   await supabase
     .from("profiles")
-    .upsert(
-      { id: data.user.id, wallet_address: account.address },
-      { onConflict: "id", ignoreDuplicates: true }
-    );
-  await supabase
-    .from("profiles")
-    .update({ wallet_address: account.address })
-    .eq("id", data.user.id)
-    .is("wallet_address", null);
+    .upsert({ id: data.user.id }, { onConflict: "id", ignoreDuplicates: true });
 
   const { data: profile } = await supabase
     .from("profiles")

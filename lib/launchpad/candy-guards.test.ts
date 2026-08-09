@@ -96,7 +96,6 @@ describe("phase → guards", () => {
     const fee = set<{ destination: string; lamports: { basisPoints: bigint } }>(guards.solFixedFee);
     expect(fee.destination).toBe(TREASURY);
     expect(fee.lamports.basisPoints).toBe(feeOf(1_000_000_000n));
-    // Pinned literal: 1% of 1 SOL. Catches a silent change to FEE_BPS.
     expect(fee.lamports.basisPoints).toBe(10_000_000n);
   });
 

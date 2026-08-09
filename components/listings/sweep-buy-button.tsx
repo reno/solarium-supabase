@@ -14,10 +14,11 @@ import { TxFlow, type TxLine } from "@/components/tx/tx-flow";
 import { useToast } from "@/components/toast/toast-provider";
 import { buyListing } from "@/lib/listings/buy";
 import { explorerTxUrl, getSolanaChain } from "@/lib/solana/config";
+import { solToLamports } from "@/lib/solana/lamports";
 import { useSolBalance } from "@/lib/solana/use-balance";
 import { createUmiForWallet } from "@/lib/solana/umi";
 import { createClient } from "@/lib/supabase/client";
-import { FEE_LABEL, FEE_RATE } from "@/supabase/functions/_shared/fee";
+import { FEE_LABEL, FEE_RATE, feeOf } from "@/supabase/functions/_shared/fee";
 
 export type SweepItem = { id: string; name: string; priceSol: string; listingId: string };
 
@@ -86,7 +87,16 @@ function Inner({ account, items, royaltyBps, onDone, solUsd }: { account: UiWall
               const failed: { name: string; reason: string }[] = [];
               for (const it of items) {
                 try {
-                  last = await buyListing({ supabase, umi, listingId: it.listingId, onStage: onStage as (s: string) => void });
+                  const itemLamports = solToLamports(it.priceSol);
+                  const itemMax =
+                    itemLamports + feeOf(itemLamports) + (itemLamports * BigInt(royaltyBps)) / 10000n;
+                  last = await buyListing({
+                    supabase,
+                    umi,
+                    listingId: it.listingId,
+                    maxLamports: itemMax,
+                    onStage: onStage as (s: string) => void,
+                  });
                   bought += 1;
                 } catch (e) {
                   failed.push({ name: it.name, reason: e instanceof Error ? e.message : "Unknown error." });

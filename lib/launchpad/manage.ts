@@ -4,7 +4,7 @@ export type NewPhase = {
   collectionId: string;
   name: string;
   priceLamports: bigint;
-  startsAt: string; // ISO
+  startsAt: string;
   endsAt: string | null;
   perWalletLimit: number | null;
   allowlistOnly: boolean;
@@ -25,24 +25,34 @@ export async function createPhase(supabase: SupabaseClient, p: NewPhase): Promis
   if (error) throw new Error(`Failed to add phase: ${error.message}`);
 }
 
-export async function deletePhase(supabase: SupabaseClient, phaseId: string): Promise<void> {
-  const { error } = await supabase.from("mint_phases").delete().eq("id", phaseId);
+export async function deletePhase(
+  supabase: SupabaseClient,
+  phaseId: string,
+  collectionId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("mint_phases")
+    .delete()
+    .eq("id", phaseId)
+    .eq("collection_id", collectionId);
   if (error) throw new Error(`Failed to remove phase: ${error.message}`);
 }
+
+const BASE58_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 export async function addAllowlist(
   supabase: SupabaseClient,
   collectionId: string,
   wallets: string[]
 ): Promise<void> {
-  const rows = wallets
-    .map((w) => w.trim())
-    .filter(Boolean)
-    .map((wallet_address) => ({ collection_id: collectionId, wallet_address }));
+  const cleaned = wallets.map((w) => w.trim()).filter(Boolean);
+  const invalid = cleaned.find((wallet) => !BASE58_ADDRESS.test(wallet));
+  if (invalid) throw new Error(`"${invalid}" is not a valid Solana wallet address.`);
+
+  const rows = cleaned.map((wallet_address) => ({ collection_id: collectionId, wallet_address }));
   if (rows.length === 0) return;
   const { error } = await supabase
     .from("launchpad_allowlist")
-    // ignoreDuplicates → ON CONFLICT DO NOTHING; the table grants no UPDATE.
     .upsert(rows, { onConflict: "collection_id,wallet_address", ignoreDuplicates: true });
   if (error) throw new Error(`Failed to update allowlist: ${error.message}`);
 }

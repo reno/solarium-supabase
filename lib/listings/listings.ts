@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { packIntoTransactions } from "@/lib/solana/pack";
 import { withRpcRetry } from "@/lib/solana/retry";
+import { confirmTransaction } from "@/lib/solana/confirm";
 
 export function getSettlementAuthority(): string {
   const address = process.env.NEXT_PUBLIC_SETTLEMENT_AUTHORITY;
@@ -168,8 +169,6 @@ function delegateBuilder(
       authority: { type: "Address", address: publicKey(settlementAuthority) },
     },
   });
-  // Core delegates are one-shot: a prior sale resets the authority but leaves the plugin,
-  // so a bought asset can still carry one and it has to be removed before re-adding.
   if (!hasDelegate) return add;
   return removePlugin(umi, {
     asset: publicKey(nft.assetAddress),
@@ -214,11 +213,7 @@ export async function listNft({
   const signatureBytes = await withRpcRetry(() => umi.rpc.sendTransaction(signed));
 
   onStage?.("confirming");
-  await withRpcRetry(() =>
-    umi.rpc.confirmTransaction(signatureBytes, {
-      strategy: { type: "blockhash", ...blockhash },
-    })
-  );
+  await confirmTransaction(umi, signatureBytes, blockhash);
 
   onStage?.("saving");
   return await recordListing(supabase, {
@@ -282,11 +277,7 @@ export async function listNfts({
         chunk.builder.setFeePayer(umi.identity).setBlockhash(blockhash).buildAndSign(umi)
       );
       const signatureBytes = await withRpcRetry(() => umi.rpc.sendTransaction(signed));
-      await withRpcRetry(() =>
-        umi.rpc.confirmTransaction(signatureBytes, {
-          strategy: { type: "blockhash", ...blockhash },
-        })
-      );
+      await confirmTransaction(umi, signatureBytes, blockhash);
       landed.push(...chunk.keys);
       onProgress?.(index + 1, chunks.length);
     } catch (e) {
@@ -344,11 +335,7 @@ export async function cancelListing({
   const signatureBytes = await withRpcRetry(() => umi.rpc.sendTransaction(signed));
 
   onStage?.("confirming");
-  await withRpcRetry(() =>
-    umi.rpc.confirmTransaction(signatureBytes, {
-      strategy: { type: "blockhash", ...blockhash },
-    })
-  );
+  await confirmTransaction(umi, signatureBytes, blockhash);
 
   onStage?.("saving");
   await recordDelisting(supabase, { listingId, nftId: nft.id, sellerId });

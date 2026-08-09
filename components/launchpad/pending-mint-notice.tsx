@@ -14,19 +14,6 @@ import {
 import { invokeFunction } from "@/lib/settle/invoke";
 import { createClient } from "@/lib/supabase/client";
 
-/**
- * Finishing a mint that landed on chain but never got recorded.
- *
- * Minting is two steps that can't be made one: the buyer's wallet signs, and then `candy-mint`
- * re-derives the asset from the chain and inserts the row (buyers can't insert into `nfts`
- * themselves). If the second step fails the item is still theirs, but nothing in the app knows —
- * and re-minting would buy a second item rather than recover the first. So the mint is kept in
- * local storage and replayed from here.
- *
- * Retrying is safe to do at any time: `candy-mint` is idempotent on the asset address and returns
- * the existing row rather than inserting twice, so a record left stale by another tab clears
- * itself on the first retry.
- */
 export function PendingMintNotice({ collectionId }: { collectionId: string }) {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
@@ -34,8 +21,6 @@ export function PendingMintNotice({ collectionId }: { collectionId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Nothing on the server, where local storage doesn't exist — rendering from it directly would
-  // mismatch the markup the page was sent with.
   const all = useSyncExternalStore(subscribePendingMints, pendingMintsSnapshot, () => NO_PENDING_MINTS);
   const pending = useMemo(() => all.filter((r) => r.collectionId === collectionId), [all, collectionId]);
 

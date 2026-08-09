@@ -1,10 +1,3 @@
-/**
- * The retry policy is the whole point of this module, and it only shows up in failure — so it is
- * pinned here rather than discovered the next time an RPC blips mid-mint.
- *
- * (A test file next to an import-free module is fine: nothing imports it, so it never reaches the
- * Deno bundle for either function.)
- */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { rpcCall } from "./rpc";
@@ -27,8 +20,6 @@ afterEach(() => {
 });
 
 describe("rpcCall", () => {
-  // The exact failure that stranded a mint: the transaction was already on chain, and the only
-  // thing that went wrong was a name lookup inside the function.
   it("retries a DNS failure and succeeds", async () => {
     vi.useFakeTimers();
     const fetchMock = vi
@@ -74,8 +65,6 @@ describe("rpcCall", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  // The node answered and said no. Retrying would just ask the same question four more times,
-  // and worse, delay a real error the caller needs to see.
   it("does not retry an error the node actually returned", async () => {
     const fetchMock = vi.fn().mockResolvedValue(rpcError("Invalid param: WrongSize"));
     vi.stubGlobal("fetch", fetchMock);
@@ -103,8 +92,6 @@ describe("rpcCall", () => {
     const fetchMock = vi.fn().mockResolvedValue(ok(null));
     vi.stubGlobal("fetch", fetchMock);
 
-    // getTransaction answers null for a signature the node hasn't seen; candy-mint turns that
-    // into "not confirmed yet", which is a different thing from a broken request.
     await expect(rpcCall("https://rpc.test", "getTransaction", [])).resolves.toBeNull();
   });
 });

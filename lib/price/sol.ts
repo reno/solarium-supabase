@@ -3,9 +3,6 @@ const FALLBACK_SOL_USD = 148.62;
 const ENDPOINT =
   "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd";
 
-// Server-only: every caller is a server component, so the key never reaches the
-// browser. Optional — without it the same endpoint works on CoinGecko's keyless
-// public tier, which is rate-limited per IP.
 function apiKeyHeader(): Record<string, string> {
   const key = process.env.COINGECKO_API_KEY;
   return key ? { "x-cg-demo-api-key": key } : {};
