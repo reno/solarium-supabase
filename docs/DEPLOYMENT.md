@@ -76,11 +76,25 @@ numbers get longer), plus polling reads between steps. Ordinary browsing, mintin
 and settlement are light by comparison. If deploys start failing, that's the
 signal to upgrade the plan; it's a billing change, not a code change.
 
-There is a retry safety net, so a tight rate limit degrades rather than breaks:
-`supabase/functions/_shared/rpc.ts` retries 5× with exponential backoff on HTTP
-429, 5xx and non-JSON gateway responses, and `lib/solana/retry.ts` does the same
-client-side on 429 only. One gap to know: umi-based reads (`fetchAsset`) bypass
-both wrappers and fail on the first 429.
+Two safety nets, so a tight rate limit degrades rather than breaks:
+
+- **Pacing (client).** Every browser RPC request goes through one global rate limiter
+  (`lib/solana/throttle.ts`), installed as the `fetch` on umi's Connection and as a
+  wrapper on the `@solana/kit` transport. It spaces requests to
+  `NEXT_PUBLIC_SOLANA_RPC_MAX_RPS` (default **8/s**), and on a 429 it reads
+  `Retry-After` and backs *every* in-flight caller off together. Set this variable
+  below your plan's limit and 429s should stop being something you retry. Deploys get
+  slower rather than failing; raise it on a paid plan.
+- **Retry.** `supabase/functions/_shared/rpc.ts` retries 5× with exponential backoff
+  on HTTP 429, 5xx and non-JSON gateway responses; `lib/solana/retry.ts` does the same
+  client-side on 429 only. One gap to know: umi-based reads (`fetchAsset`) bypass the
+  retry wrapper — but not the pacer, which sits underneath at the transport.
+
+Worth knowing if you're tuning this: the deploy's request volume is dominated by
+*polling*, not by transactions. A 250-item deploy is only ~7–8 sends; the traffic is
+confirmation polls and the account-visibility waits between steps. Both use exponential
+backoff and poll the signature directly rather than watching for blockhash expiry, which
+is why a large drop costs far fewer requests than its transaction count might suggest.
 
 ## 2. Generate a new mainnet settlement authority
 
@@ -223,10 +237,14 @@ Don't set `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` —
 hosted Edge Functions get those injected automatically; they're only in the local
 `supabase/functions/.env` file because `functions serve` needs them explicitly.
 
-There's no `[functions]` section in `config.toml`, so the platform default
-`verify_jwt = true` applies to all three and there's nothing per-function to push.
-Each one *also* re-checks the caller itself — anon-key client, `auth.getUser()`,
-401 if absent — so a caller always needs a real signed-in user's JWT, which
+All three are declared as `[functions.<name>]` tables in `config.toml`. That
+declaration is what makes the **GitHub integration** deploy them on merge to the
+production branch: it deploys new migrations plus the Edge Functions and Storage
+buckets *declared in `config.toml`*, and silently skips functions that merely exist
+on disk. (This was why nothing was deployed before 2026-08-08 — migrations flowed,
+functions never did.) The `verify_jwt = true` in each table is the platform default
+pinned explicitly rather than left implicit. Each one *also* re-checks the caller
+itself — anon-key client, `auth.getUser()`, 401 if absent — so a caller always needs a real signed-in user's JWT, which
 `supabase.functions.invoke` attaches automatically (`lib/settle/invoke.ts:9`).
 
 ### 3d. Delayed reveal is manual — there is no cron

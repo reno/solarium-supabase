@@ -15,6 +15,7 @@ import {
 } from "@solana/kit";
 
 import { getRpcUrl } from "@/lib/solana/config";
+import { throttledFetch } from "@/lib/solana/throttle";
 
 function toUmiSigner(
   umi: Umi,
@@ -55,7 +56,13 @@ function toUmiSigner(
 export function createUmiForWallet(
   kitSigner: TransactionModifyingSigner
 ): Umi {
-  const umi = createUmi(getRpcUrl()).use(mplCore());
+  // `fetch` routes every request — including the polling web3.js does inside
+  // confirmTransaction — through the global pacer. `commitment` is otherwise "finalized",
+  // which makes each read wait for a state the deploy steps don't need and don't check.
+  const umi = createUmi(getRpcUrl(), {
+    commitment: "confirmed",
+    fetch: throttledFetch,
+  }).use(mplCore());
   umi.use(signerIdentity(toUmiSigner(umi, kitSigner)));
   return umi;
 }

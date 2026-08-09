@@ -397,6 +397,24 @@ authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
 allow_dynamic_registration = false
 
+# One table per Edge Function. These exist so the Supabase GitHub integration
+# deploys them on merge to the production branch — it only deploys functions
+# *declared* here, and skips anything that merely exists in `functions/`.
+# `_shared/` is not a function; it is bundled into whichever entrypoints import it.
+# `verify_jwt = true` is the platform default, pinned explicitly because all three
+# also re-check the caller with `auth.getUser()` and need a real user JWT.
+[functions.settle]
+enabled = true
+verify_jwt = true
+
+[functions.candy-mint]
+enabled = true
+verify_jwt = true
+
+[functions.reveal]
+enabled = true
+verify_jwt = true
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

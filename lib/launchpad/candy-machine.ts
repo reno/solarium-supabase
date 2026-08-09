@@ -22,6 +22,7 @@ import {
   type PublicKey,
   type Signer,
   type TransactionBuilder,
+  type TransactionSignature,
   type Umi,
 } from "@metaplex-foundation/umi";
 import { base58 } from "@metaplex-foundation/umi/serializers";
@@ -60,8 +61,19 @@ export type MintStage = "allowlist" | "signing" | "sending" | "confirming" | "re
 
 export { MAX_DROP_SUPPLY };
 
-const VISIBILITY_ATTEMPTS = 45;
-const VISIBILITY_DELAY_MS = 2000;
+// Both waits below back off exponentially rather than polling at a flat interval. The happy
+// path resolves on the first or second try, so a short first delay finishes sooner *and* spends
+// fewer requests than a flat 2s poll — which matters because a free-tier RPC bills per request
+// and a deploy runs these loops several times.
+const VISIBILITY_TIMEOUT_MS = 90_000;
+const POLL_INITIAL_DELAY_MS = 250;
+const POLL_MAX_DELAY_MS = 4000;
+// A blockhash is valid for ~150 slots (60-90s). Rather than spend a getBlockHeight per second
+// to watch for its expiry — which is what umi's blockhash strategy does — treat wall clock as
+// the proxy and poll the signature itself.
+const CONFIRM_TIMEOUT_MS = 90_000;
+const CONFIRM_INITIAL_DELAY_MS = 500;
+const CONFIRM_MAX_DELAY_MS = 2000;
 
 function withCandyMachine(umi: Umi): Umi {
   return umi.use(mplCandyMachine());
@@ -74,12 +86,46 @@ function delay(ms: number): Promise<void> {
 // At "confirmed" commitment an account written by one transaction is not necessarily
 // readable by the next RPC call, and each deploy step reads what the previous one wrote.
 async function waitForAccount(umi: Umi, address: PublicKey, label: string): Promise<void> {
-  for (let attempt = 0; attempt < VISIBILITY_ATTEMPTS; attempt++) {
-    const exists = await withRpcRetry(() => umi.rpc.accountExists(address));
-    if (exists) return;
-    await delay(VISIBILITY_DELAY_MS);
+  const deadline = Date.now() + VISIBILITY_TIMEOUT_MS;
+  let wait = POLL_INITIAL_DELAY_MS;
+  for (;;) {
+    if (await withRpcRetry(() => umi.rpc.accountExists(address))) return;
+    if (Date.now() + wait >= deadline) {
+      throw new Error(`${label} did not become readable on the RPC. It may still be on chain — retry in a moment.`);
+    }
+    await delay(wait);
+    wait = Math.min(wait * 2, POLL_MAX_DELAY_MS);
   }
-  throw new Error(`${label} did not become readable on the RPC. It may still be on chain — retry in a moment.`);
+}
+
+// Poll the signature rather than using umi's blockhash strategy, which delegates to web3.js and
+// polls getBlockHeight once a second until the blockhash expires — up to 90 requests for a
+// transaction that usually lands in two. A 429 in there is also swallowed by web3.js and simply
+// retried forever; here it surfaces to withRpcRetry.
+async function confirmSignature(
+  umi: Umi,
+  signatureBytes: TransactionSignature,
+  label: string
+): Promise<void> {
+  const signature = base58.deserialize(signatureBytes)[0];
+  const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
+  let wait = CONFIRM_INITIAL_DELAY_MS;
+  for (;;) {
+    await delay(wait);
+    const [status] = await withRpcRetry(() => umi.rpc.getSignatureStatuses([signatureBytes]));
+    if (status) {
+      if (status.error) {
+        throw new Error(`${label} failed on chain: ${JSON.stringify(status.error)}`);
+      }
+      if (status.commitment === "confirmed" || status.commitment === "finalized") return;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `${label} was sent but not confirmed in time (${signature}). It may still land — check the explorer before retrying.`
+      );
+    }
+    wait = Math.min(wait * 2, CONFIRM_MAX_DELAY_MS);
+  }
 }
 
 // Wallet signs first, or later keypair signatures break: some wallets modify the
@@ -102,12 +148,7 @@ async function sendBuilder(umi: Umi, builder: TransactionBuilder): Promise<strin
     },
   ]);
   const signatureBytes = await withRpcRetry(() => umi.rpc.sendTransaction(signed));
-  await withRpcRetry(() =>
-    umi.rpc.confirmTransaction(signatureBytes, {
-      strategy: { type: "blockhash", ...blockhash },
-      commitment: "confirmed",
-    })
-  );
+  await confirmSignature(umi, signatureBytes, "The transaction");
   return base58.deserialize(signatureBytes)[0];
 }
 
