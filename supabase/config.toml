@@ -156,17 +156,36 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
+#
+# Deliberately left at localhost even though this file is also pushed to the
+# hosted project: this is a wallet-only project, so nothing constructs an email
+# link off it, and `additional_redirect_urls` below carries every origin that
+# actually needs to authorise a sign-in. Keeping it that way means a later
+# `supabase config push` from a dev machine cannot break production sign-in.
 site_url = "http://localhost:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
-# A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-# Both localhost and 127.0.0.1 are listed because SIWS messages are validated
-# against these URLs and the browser may use either host for local dev.
+# A list of URLs (glob patterns allowed) that auth providers may redirect to post
+# authentication. SIWS sign-in is validated against this list too, which is what
+# makes it load-bearing here: auth-js signs `uri = window.location.href` — the
+# WHOLE page URL, path and query included — so a bare origin only authorises
+# sign-in from `/`. Hence a `/**` entry per host.
+#
+# `**` not `*`: a single star does not cross `/`, so `http://localhost:3000/*`
+# would allow `/portfolio` but reject `/collections/<id>`.
+#
+# Production domains are listed alongside localhost because this one file drives
+# both `supabase start` and `supabase config push`. Both apex and www are here —
+# whichever one the browser is on is the one the wallet signs for.
 additional_redirect_urls = [
   "http://localhost:3000",
-  "http://localhost:3000/*",
+  "http://localhost:3000/**",
   "http://127.0.0.1:3000",
-  "http://127.0.0.1:3000/*",
+  "http://127.0.0.1:3000/**",
+  "https://solarium-mkt.cc",
+  "https://solarium-mkt.cc/**",
+  "https://www.solarium-mkt.cc",
+  "https://www.solarium-mkt.cc/**",
 ]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
