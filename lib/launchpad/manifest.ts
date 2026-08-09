@@ -24,9 +24,12 @@ import {
   type DropManifest,
   type ManifestTrait,
 } from "@/supabase/functions/_shared/manifest";
+import { safeExtension } from "@/lib/media/validate";
 
-export function extensionOf(filename: string): string {
-  return filename.includes(".") ? filename.slice(filename.lastIndexOf(".") + 1).toLowerCase() : "png";
+// Allowlisted rather than "whatever follows the last dot": File.name is arbitrary, and this
+// value goes straight into a storage object key. See lib/media/validate.ts.
+export function extensionOf(filename: string, contentType?: string): string {
+  return safeExtension(filename, contentType);
 }
 
 // "10.png" must not sort ahead of "2.png": when the traits file doesn't name indices, file order

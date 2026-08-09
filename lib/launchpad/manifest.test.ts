@@ -13,6 +13,9 @@ import {
   traitLayersOf,
   traitPlanIssue,
   ABSENT_TRAIT_VALUE,
+  MAX_DROP_SUPPLY,
+  MAX_TRAITS_PER_ITEM,
+  MAX_TRAIT_FIELD,
   type ManifestTrait,
 } from "./manifest";
 
@@ -167,6 +170,41 @@ describe("parseManifest", () => {
 
   it("rejects a manifest from a future version", () => {
     expect(() => parseManifest({ version: 2, supply: 0, items: [] })).toThrow(/version 2/);
+  });
+
+  // buildManifest applies the cap when a drop is created, but `reveal` reads a manifest back out
+  // of storage and then does one service-role upload per item — so the cap has to hold on the
+  // parse side too, or an oversized file is a write amplifier for anyone who can trigger a
+  // reveal.
+  it("rejects a manifest larger than the supply cap", () => {
+    const oversized = {
+      version: 1,
+      supply: MAX_DROP_SUPPLY + 1,
+      items: Array.from({ length: MAX_DROP_SUPPLY + 1 }, (_, position) => ({
+        index: position + 1,
+        image: `https://example.test/${position + 1}.png`,
+        imageType: "image/png",
+        traits: [],
+      })),
+    };
+    expect(() => parseManifest(oversized)).toThrow(
+      new RegExp(`lists ${MAX_DROP_SUPPLY + 1} items; the maximum is ${MAX_DROP_SUPPLY}`)
+    );
+  });
+
+  it("bounds the traits an item can carry", () => {
+    const manifest = buildManifest({ images: images(1), traits: null });
+    const parsed = parseManifest({
+      ...manifest,
+      items: [
+        {
+          ...manifest.items[0],
+          traits: Array.from({ length: 500 }, (_, i) => ({ trait: `t${i}`, value: "x".repeat(1000) })),
+        },
+      ],
+    });
+    expect(parsed.items[0].traits).toHaveLength(MAX_TRAITS_PER_ITEM);
+    expect(parsed.items[0].traits[0].value.length).toBe(MAX_TRAIT_FIELD);
   });
 });
 

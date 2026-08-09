@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { useSyncCommentsCount } from "@/components/social/comments-visibility";
 import { addComment, deleteComment } from "@/lib/social/social";
 import { createClient } from "@/lib/supabase/client";
+import { friendlyError } from "@/lib/errors";
 
 export type CommentEntry = {
   id: string;
@@ -64,7 +65,7 @@ export function CommentsSection({
       ]);
       setDraft("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to post comment.");
+      setError(friendlyError(e, "Failed to post comment."));
     } finally {
       setPosting(false);
     }
@@ -78,7 +79,7 @@ export function CommentsSection({
       await deleteComment(supabase, { commentId, userId: viewerId });
       setComments((prev) => prev.filter((c) => c.id !== commentId));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete comment.");
+      setError(friendlyError(e, "Failed to delete comment."));
     } finally {
       setDeletingId(null);
     }

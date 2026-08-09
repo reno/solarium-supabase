@@ -13,6 +13,17 @@ type SearchResult = {
   href: string;
 };
 
+// Characters that mean something to PostgREST rather than to a person searching for a name:
+// `%` and `_` are LIKE wildcards, PostgREST rewrites `*` to `%`, and `,` `(` `)` `.` `:` are
+// filter syntax for any operator that takes a raw string. Dropped rather than escaped — none of
+// them are useful in a name search, and stripping cannot be got wrong the way escaping can.
+const SEARCH_SYNTAX = /[%_*\\,().:]/g;
+const MAX_SEARCH_LENGTH = 64;
+
+function searchTerm(raw: string): string {
+  return raw.toLowerCase().replace(SEARCH_SYNTAX, " ").trim().slice(0, MAX_SEARCH_LENGTH);
+}
+
 export function GlobalSearch() {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -32,7 +43,9 @@ export function GlobalSearch() {
   }, []);
 
   useEffect(() => {
-    if (!query.trim()) {
+    // Also covers a query that was nothing but filter syntax: with the term stripped to empty,
+    // a `%%` pattern would match everything.
+    if (!searchTerm(query)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronous reset on empty query
       setResults([]);
       setLoading(false);
@@ -44,7 +57,7 @@ export function GlobalSearch() {
 
     const search = async () => {
       const supabase = createClient();
-      const q = query.toLowerCase();
+      const q = searchTerm(query);
 
       const [collectionsRes, nftsRes, profilesRes] = await Promise.all([
         supabase
@@ -57,12 +70,28 @@ export function GlobalSearch() {
           .select("id, name, collections(name)")
           .ilike("name", `%${q}%`)
           .limit(5),
+        // Two ilike filters instead of .or(): .or() takes a raw PostgREST filter string, so a
+        // comma in the term used to end the condition and let the rest of it be read as more
+        // filters — turning this box into a query builder over anything RLS exposes.
         supabase
           .from("profiles")
           .select("id, username, wallet_address")
-          .or(`username.ilike.%${q}%,wallet_address.ilike.%${q}%`)
+          .ilike("username", `%${q}%`)
           .limit(5),
-      ]);
+        supabase
+          .from("profiles")
+          .select("id, username, wallet_address")
+          .ilike("wallet_address", `%${q}%`)
+          .limit(5),
+      ]).then(([collections, nfts, byUsername, byWallet]) => {
+        const seen = new Set<string>();
+        const merged = [...(byUsername.data ?? []), ...(byWallet.data ?? [])].filter((row) => {
+          if (seen.has(row.id)) return false;
+          seen.add(row.id);
+          return true;
+        });
+        return [collections, nfts, { ...byUsername, data: merged.slice(0, 5) }] as const;
+      });
 
       if (cancelled) return;
 

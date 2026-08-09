@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { Button, Input } from "@/components/design";
+import { assertUploadableImage, MAX_AVATAR_BYTES, safeExtension } from "@/lib/media/validate";
 import { createClient } from "@/lib/supabase/client";
+import { friendlyError } from "@/lib/errors";
 
 const USERNAME_PATTERN = /^[a-z0-9_]{3,30}$/;
+const MAX_BIO = 500;
 
 const FIELD_LABEL: React.CSSProperties = {
   display: "block",
@@ -64,12 +67,19 @@ export function ProfileForm({
           );
           return;
         }
+        // The textarea caps this too; checked again here so the rule survives a paste that
+        // outruns the attribute, and matches the CHECK constraint on profiles.bio.
+        if (bio.trim().length > MAX_BIO) {
+          setError(`Your bio must be ${MAX_BIO} characters or fewer.`);
+          return;
+        }
         setSaving(true);
         setError(null);
         try {
           let avatarUrl = initial.avatarUrl;
           if (avatarFile) {
-            const ext = avatarFile.name.split(".").pop() ?? "png";
+            await assertUploadableImage(avatarFile, "Your profile picture", MAX_AVATAR_BYTES);
+            const ext = safeExtension(avatarFile.name, avatarFile.type);
             const path = `${userId}/avatar-${Date.now()}.${ext}`;
             const { error: uploadError } = await supabase.storage
               .from("avatars")
@@ -98,7 +108,7 @@ export function ProfileForm({
           router.push("/");
           router.refresh();
         } catch (e) {
-          setError(e instanceof Error ? e.message : "Failed to save profile.");
+          setError(friendlyError(e, "Failed to save profile."));
         } finally {
           setSaving(false);
         }

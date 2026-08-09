@@ -11,8 +11,12 @@ export async function invokeFunction(
     if (error instanceof FunctionsHttpError) {
       const details = await error.context
         .json()
-        .catch(() => null as { error?: string; message?: string } | null);
-      throw new Error(details?.error ?? details?.message ?? fallbackMessage);
+        .catch(() => null as { error?: string } | null);
+      // Only `error` is read, because that is the envelope *our* functions return. A 502/503
+      // from the API gateway — the function not deployed, its container not running — is JSON
+      // too, but shaped `{ message: … }`, and forwarding that told a buyer their mint failed
+      // with "name resolution failed", which is Kong's problem described in Kong's words.
+      throw new Error(details?.error ?? fallbackMessage);
     }
     throw error;
   }

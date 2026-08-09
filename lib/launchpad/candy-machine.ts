@@ -52,6 +52,7 @@ import { savePendingMint } from "@/lib/launchpad/pending-mints";
 import { publicUrl, runPooled, uploadJson } from "@/lib/launchpad/upload";
 import { getSettlementAuthority } from "@/lib/listings/listings";
 import { feeOf } from "@/supabase/functions/_shared/fee";
+import { sha256Hex } from "@/supabase/functions/_shared/tx";
 import { buildNftMetadata } from "@/lib/mint/metadata";
 import { invokeFunction } from "@/lib/settle/invoke";
 import { withRpcRetry } from "@/lib/solana/retry";
@@ -156,7 +157,12 @@ function merkleRootFor(allowlist: string[]): Uint8Array | null {
   return allowlist.length > 0 ? getMerkleRoot(allowlist) : null;
 }
 
-async function loadManifest(supabase: SupabaseClient, folder: string): Promise<DropManifest | null> {
+type LoadedManifest = { manifest: DropManifest; sha256: string };
+
+// Returns the hash alongside the parsed manifest so that deploy can pin it. The hash is taken
+// over the raw bytes rather than a re-serialisation of the parsed object, so it is comparable
+// to what `reveal` computes when it fetches the same file back.
+async function loadManifest(supabase: SupabaseClient, folder: string): Promise<LoadedManifest | null> {
   let response: Response;
   try {
     response = await fetch(publicUrl(supabase, manifestPath(folder)), { cache: "no-store" });
@@ -169,15 +175,20 @@ async function loadManifest(supabase: SupabaseClient, folder: string): Promise<D
   // Storage answers 400 or 404 for an object that isn't there, depending on the path.
   if (response.status === 404 || response.status === 400) return null;
   if (!response.ok) throw new Error(`Could not read this drop's item manifest (HTTP ${response.status}).`);
-  return parseManifest(await response.json());
+  const text = await response.text();
+  return {
+    manifest: parseManifest(JSON.parse(text)),
+    sha256: await sha256Hex(new TextEncoder().encode(text)),
+  };
 }
 
-export function readDropManifest(
+export async function readDropManifest(
   supabase: SupabaseClient,
   creatorId: string,
   collectionId: string
 ): Promise<DropManifest | null> {
-  return loadManifest(supabase, dropFolder(creatorId, collectionId));
+  const loaded = await loadManifest(supabase, dropFolder(creatorId, collectionId));
+  return loaded?.manifest ?? null;
 }
 
 // A drop created before per-item uploads existed has no manifest. It still deploys: every item
@@ -264,13 +275,19 @@ export async function deployCandyMachine(params: DeployParams): Promise<DeployRe
   const signatures: string[] = [];
   let collectionAddress = params.collectionAddress;
   let row = existing ?? null;
+  // Pinned onto the candy_machines row below. The column is insert-only for the creator, and
+  // the drop's storage folder becomes immutable the moment that row exists, so this is what
+  // lets `reveal` prove the manifest it fetches is the one the drop was deployed from.
+  let manifestSha256: string | null = null;
 
   if (!row) {
     onStage?.("metadata");
     const folder = dropFolder(creatorId, collectionId);
     const imageType = params.imageType ?? "image/png";
 
-    const manifest = await loadManifest(supabase, folder);
+    const loaded = await loadManifest(supabase, folder);
+    const manifest = loaded?.manifest ?? null;
+    manifestSha256 = loaded?.sha256 ?? null;
     // The manifest wins over whatever supply the caller asked for: it is what will actually be
     // written as config lines, and a machine sized to any other number can never be filled.
     if (manifest) supply = manifest.supply;
@@ -373,6 +390,7 @@ export async function deployCandyMachine(params: DeployParams): Promise<DeployRe
         prefix_name: prefixName,
         prefix_uri: uri.prefixUri,
         deploy_tx: deployTx,
+        manifest_sha256: manifestSha256,
       })
       .select("id")
       .single();

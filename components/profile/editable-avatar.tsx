@@ -6,6 +6,7 @@ import { useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/design";
 import { useToast } from "@/components/toast/toast-provider";
 import { Avatar } from "@/components/profile/avatar";
+import { assertUploadableImage, MAX_AVATAR_BYTES, safeExtension } from "@/lib/media/validate";
 import { createClient } from "@/lib/supabase/client";
 
 export function EditableAvatar({
@@ -38,11 +39,12 @@ export function EditableAvatar({
     setPreview(objectUrl);
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop()?.toLowerCase() || "png";
+      await assertUploadableImage(file, "That image", MAX_AVATAR_BYTES);
+      const ext = safeExtension(file.name, file.type);
       const path = `${userId}/avatar-${Date.now()}.${ext}`;
       const { error: uploadError } = await supabase.storage
         .from("avatars")
-        .upload(path, file, { contentType: file.type || "image/png" });
+        .upload(path, file, { contentType: file.type });
       if (uploadError) throw uploadError;
       const publicUrl = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
 

@@ -27,6 +27,11 @@ export const MEDIA_BUCKET = "nft-media";
 
 export const MAX_DROP_SUPPLY = 250;
 
+// Per-item trait bounds. A generative drop has a handful of layers; these are headroom, not a
+// target, and exist so that parsing a manifest can never produce an unbounded write.
+export const MAX_TRAITS_PER_ITEM = 64;
+export const MAX_TRAIT_FIELD = 128;
+
 // A layer an item didn't roll is still a value it has, and recompute_collection_rarity scores
 // items by summing 1/frequency over their traits — so an item that simply omits "Halo" scores
 // lower than one with a common halo, which reads as "less rare" for no reason. Writing the
@@ -65,6 +70,15 @@ export function parseManifest(value: unknown): DropManifest {
   if (!Array.isArray(manifest.items) || manifest.items.length === 0) {
     throw new Error("This drop's item manifest has no items.");
   }
+  // The cap is enforced here rather than only at authoring time, because `reveal` reads this
+  // file back from storage and then does one upload per item: an oversized manifest is a
+  // service-role write amplifier, and anyone signed in may trigger a reveal once the deadline
+  // passes. buildManifest applies the same limit when the drop is created.
+  if (manifest.items.length > MAX_DROP_SUPPLY) {
+    throw new Error(
+      `This drop's item manifest lists ${manifest.items.length} items; the maximum is ${MAX_DROP_SUPPLY}.`
+    );
+  }
   if (manifest.supply !== manifest.items.length) {
     throw new Error(
       `This drop's item manifest claims ${String(manifest.supply)} items but lists ${manifest.items.length}.`
@@ -85,10 +99,17 @@ export function parseManifest(value: unknown): DropManifest {
       index: item.index,
       image: item.image,
       imageType: typeof item.imageType === "string" && item.imageType ? item.imageType : "image/png",
+      // Bounded on both axes: these strings are written into nfts.traits and into every item's
+      // metadata JSON, so an unbounded trait list is a way to push arbitrary bulk through a
+      // service-role write.
       traits: Array.isArray(item.traits)
         ? item.traits
             .filter((trait): trait is ManifestTrait => Boolean(trait) && typeof trait.trait === "string")
-            .map(({ trait, value }) => ({ trait, value: String(value ?? "") }))
+            .slice(0, MAX_TRAITS_PER_ITEM)
+            .map(({ trait, value }) => ({
+              trait: trait.slice(0, MAX_TRAIT_FIELD),
+              value: String(value ?? "").slice(0, MAX_TRAIT_FIELD),
+            }))
         : [],
     };
   });

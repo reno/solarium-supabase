@@ -62,8 +62,13 @@ export default async function NftDetailPage({
   const priceLamports = activeListing ? BigInt(String(activeListing.price_lamports)) : 0n;
   const priceSol = activeListing ? lamportsToSol(priceLamports) : null;
   const royaltyBps = collection?.royalty_bps ?? 0;
+  // Mirrors splitApplies() in supabase/functions/settle: the royalty leg is dropped whenever the
+  // collection creator is on either side of the sale. Quoting it anyway overstates what the
+  // buyer will actually be charged — and the quote is what gates the balance check.
   const viewerIsCreator = !!user && collection?.creator_id === user.id;
-  const chargedRoyaltyBps = viewerIsCreator ? 0 : royaltyBps;
+  const sellerIsCreator =
+    !!activeListing && !!collection?.creator_id && collection.creator_id === String(activeListing.seller_id);
+  const chargedRoyaltyBps = viewerIsCreator || sellerIsCreator ? 0 : royaltyBps;
   const buyerTotalSol = activeListing
     ? lamportsToSol(priceLamports + (priceLamports * BigInt(chargedRoyaltyBps)) / 10000n + feeOf(priceLamports))
     : null;

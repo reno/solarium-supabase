@@ -10,6 +10,7 @@ import { acceptOffer } from "@/lib/offers/accept";
 import { cancelOffer } from "@/lib/offers/offers";
 import type { OfferEntry } from "@/lib/offers/map";
 import { createClient } from "@/lib/supabase/client";
+import { friendlyError } from "@/lib/errors";
 
 export type { OfferEntry };
 
@@ -79,7 +80,7 @@ export function OffersList({
       setConfirm(null);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setError(friendlyError(e));
     } finally {
       setBusyId(null);
     }

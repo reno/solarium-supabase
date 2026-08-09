@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { Button, Dialog, Icon } from "@/components/design";
+import { friendlyError } from "@/lib/errors";
 
 export type TxLine = { label: string; value: string; strong?: boolean; muted?: boolean };
 export type TxStage = { key: string; label: string };
@@ -65,7 +66,7 @@ export function TxFlow({
       setPhase("success");
       onDone?.(result);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setError(friendlyError(e));
       setPhase("error");
     }
   };

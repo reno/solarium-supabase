@@ -12,6 +12,7 @@ import {
   type ManifestTrait,
 } from "@/lib/launchpad/manifest";
 import { publicUrl, runPooled, uploadJson, uploadTo, type Progress } from "@/lib/launchpad/upload";
+import { assertUploadableImage } from "@/lib/media/validate";
 
 export type LaunchPhaseInput = {
   name: string;
@@ -41,6 +42,41 @@ export type NewLaunch = {
 
 export type LaunchProgress = (stage: "artwork" | "items" | "manifest" | "record", done: number, total: number) => void;
 
+// Matches the CHECK constraints on `collections`, and the base58 shape a Solana address has.
+// The wizard applies most of these as maxLength attributes, which is a UI affordance rather
+// than a rule — createLaunch is a plain exported function and nothing stops a caller reaching it
+// directly, so the rule belongs here too.
+const MAX_NAME = 100;
+const MAX_DESCRIPTION = 2000;
+const BASE58_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+function assertLaunchText(launch: NewLaunch): void {
+  const name = launch.name.trim();
+  if (name.length < 1 || name.length > MAX_NAME) {
+    throw new Error(`The drop name must be between 1 and ${MAX_NAME} characters.`);
+  }
+  if ((launch.description?.length ?? 0) > MAX_DESCRIPTION) {
+    throw new Error(`The description must be ${MAX_DESCRIPTION} characters or fewer.`);
+  }
+  if (!Number.isInteger(launch.royaltyBps) || launch.royaltyBps < 0 || launch.royaltyBps > 10000) {
+    throw new Error("The creator royalty must be between 0% and 100%.");
+  }
+  if (launch.items.length < 1) {
+    throw new Error("A drop needs at least one item.");
+  }
+  for (const phase of launch.phases) {
+    if (phase.priceLamports < 0n) throw new Error(`Phase "${phase.name}" has a negative price.`);
+    if (phase.perWalletLimit !== null && phase.perWalletLimit < 1) {
+      throw new Error(`Phase "${phase.name}" has a per-wallet limit below 1.`);
+    }
+  }
+  for (const wallet of launch.allowlistWallets) {
+    if (!BASE58_ADDRESS.test(wallet)) {
+      throw new Error(`"${wallet}" is not a valid Solana wallet address.`);
+    }
+  }
+}
+
 export async function createLaunch(
   supabase: SupabaseClient,
   launch: NewLaunch,
@@ -53,31 +89,42 @@ export async function createLaunch(
   const collectionId = crypto.randomUUID();
   const folder = dropFolder(launch.creatorId, collectionId);
 
+  // Everything checkable is checked before a single byte is uploaded, for the same reason
+  // buildManifest runs before the item loop below: a rejection discovered after 250 uploads is
+  // the same rejection, found expensively. These limits also exist in the database and on the
+  // storage buckets — this is where they become a sentence rather than a constraint violation.
+  assertLaunchText(launch);
+  const ordered = orderItemFiles(launch.items);
+  await assertUploadableImage(launch.cover, "The cover image");
+  if (launch.banner) await assertUploadableImage(launch.banner, "The banner image");
+  for (const [position, file] of ordered.entries()) {
+    await assertUploadableImage(file, `Item ${position + 1}`);
+  }
+
   const step = (stage: Parameters<LaunchProgress>[0]): Progress => (done, total) => onProgress?.(stage, done, total);
 
   onProgress?.("artwork", 0, launch.banner ? 2 : 1);
   const coverUrl = await uploadTo(
     supabase,
-    `${folder}/cover.${extensionOf(launch.cover.name)}`,
+    `${folder}/cover.${extensionOf(launch.cover.name, launch.cover.type)}`,
     launch.cover,
-    launch.cover.type || "image/png",
+    launch.cover.type,
     "Artwork"
   );
   onProgress?.("artwork", 1, launch.banner ? 2 : 1);
   const bannerUrl = launch.banner
     ? await uploadTo(
         supabase,
-        `${folder}/banner.${extensionOf(launch.banner.name)}`,
+        `${folder}/banner.${extensionOf(launch.banner.name, launch.banner.type)}`,
         launch.banner,
-        launch.banner.type || "image/png",
+        launch.banner.type,
         "Banner"
       )
     : null;
 
-  const ordered = orderItemFiles(launch.items);
   const images = ordered.map((file, position) => ({
     index: position + 1,
-    url: publicUrl(supabase, itemImagePath(folder, position + 1, extensionOf(file.name))),
+    url: publicUrl(supabase, itemImagePath(folder, position + 1, extensionOf(file.name, file.type))),
     type: file.type || "image/png",
   }));
 
@@ -91,9 +138,9 @@ export async function createLaunch(
     async (file, position) => {
       await uploadTo(
         supabase,
-        itemImagePath(folder, position + 1, extensionOf(file.name)),
+        itemImagePath(folder, position + 1, extensionOf(file.name, file.type)),
         file,
-        file.type || "image/png",
+        file.type,
         `Item ${position + 1}`
       );
     },

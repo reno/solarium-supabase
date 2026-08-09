@@ -25,6 +25,32 @@ function isTransient(e: unknown): boolean {
 
 const backoff = (attempt: number) => new Promise((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
 
+/**
+ * Like `rpcCall`, but also waits out a node that answered successfully with "nothing here yet".
+ *
+ * `rpcCall` retries a request that failed to arrive. It cannot retry one that arrived and
+ * returned null, because null is a legitimate answer — and for `getTransaction` moments after a
+ * transaction landed, it is usually a *stale* one: the caller has a confirmed signature from
+ * their own RPC connection, and this is a different one that has not indexed it yet.
+ *
+ * That distinction matters because of when these lookups happen. By this point the user has
+ * signed, paid, and landed a transaction; answering "not found" strands them with a purchase or
+ * a mint the app refuses to record. Waiting a few seconds is the cheaper mistake.
+ */
+export async function rpcCallForResult(
+  rpcUrl: string,
+  method: string,
+  params: unknown[],
+  attempts = 4
+): Promise<unknown> {
+  for (let attempt = 1; ; attempt++) {
+    const result = await rpcCall(rpcUrl, method, params);
+    if (result !== null && result !== undefined) return result;
+    if (attempt >= attempts) return result;
+    await backoff(attempt);
+  }
+}
+
 export async function rpcCall(
   rpcUrl: string,
   method: string,
