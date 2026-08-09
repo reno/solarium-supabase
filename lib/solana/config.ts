@@ -1,4 +1,11 @@
-import { createSolanaRpc, type Rpc, type SolanaRpcApi } from "@solana/kit";
+import {
+  createDefaultRpcTransport,
+  createSolanaRpcFromTransport,
+  type Rpc,
+  type SolanaRpcApi,
+} from "@solana/kit";
+
+import { throttled } from "@/lib/solana/throttle";
 
 export type Cluster = "devnet" | "testnet" | "mainnet-beta" | "localnet";
 
@@ -22,7 +29,12 @@ export function getRpcUrl(): string {
 }
 
 export function getRpc(): Rpc<SolanaRpcApi> {
-  return createSolanaRpc(getRpcUrl());
+  // Kit's transport config has no fetch hook, but a transport is just a function, so the pacer
+  // wraps it instead. Light traffic, but it draws from the same budget as umi rather than
+  // slipping past it.
+  const transport = createDefaultRpcTransport({ url: getRpcUrl() });
+  return createSolanaRpcFromTransport(((...args: Parameters<typeof transport>) =>
+    throttled(() => transport(...args))) as typeof transport);
 }
 
 export function getSolanaChain(): `solana:${string}` {
