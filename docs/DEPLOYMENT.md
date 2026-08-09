@@ -21,15 +21,16 @@ as if it were real, or vice versa.
 
 ## 0b. What you need besides Supabase and Vercel
 
-Short list, because it is shorter than people expect. Two of these fail *silently*
-— no error, no log, just wrong output — which is the reason they're written down.
+Short list, because it is shorter than people expect. One of these still fails
+*silently* — no error, no log, just wrong output — which is the reason they're
+written down.
 
 | Thing | Required? | Why, and what breaks without it |
 |---|---|---|
 | Solana RPC endpoint (Helius) | **Yes** | Every chain read and write. Step 1. |
 | Settlement authority keypair | **Yes** | A keypair you generate, not a service you sign up for. Step 2. Needs no balance. |
 | Domain + HTTPS | **Yes** | SIWS validates the sign-in message URI against Auth's redirect allow-list. An `http://` origin, or one missing from step 3a's list, fails sign-in outright. |
-| CoinGecko public API | Degrades silently | `lib/price/sol.ts:5-8` fetches SOL/USD with no API key and `revalidate: 60`. Every failure path — non-200, rate limit, malformed body, network error — returns a **hardcoded `148.62`** (`sol.ts:1,9,12,14`). Users then see a plausible but stale USD figure and nothing logs an error. Display only: lamport amounts, listings and settlement never touch this number. |
+| CoinGecko API | Optional; degrades loudly | `lib/price/sol.ts` fetches SOL/USD with `revalidate: 60`. Set `COINGECKO_API_KEY` (free **Demo** key) to get your own rate limit instead of sharing the keyless public tier by IP — see step 4. Every failure path still returns a **hardcoded `148.62`**, but now logs a `[sol-usd]` warning first, so a dead key is visible in Vercel runtime logs rather than silently serving a stale figure. Display only: lamport amounts, listings and settlement never touch this number. |
 | jsDelivr CDN | Degrades silently | `components/design/core/Icon.tsx:5,21` fetches **every** icon at runtime from `cdn.jsdelivr.net`, and the failure handler is an empty `.catch(() => {})` (`:28`). If the CDN is blocked or down, icons simply don't render — no broken-image marker, no console error. |
 | explorer.solana.com | Links only | Outbound `href`s built in `lib/solana/config.ts:39,43`. Nothing is fetched from it. |
 
@@ -143,16 +144,37 @@ dev):
 ```toml
 additional_redirect_urls = [
   "http://localhost:3000",
-  "http://localhost:3000/*",
+  "http://localhost:3000/**",
   "http://127.0.0.1:3000",
-  "http://127.0.0.1:3000/*",
+  "http://127.0.0.1:3000/**",
   "https://<your-production-domain>",
-  "https://<your-production-domain>/*",
+  "https://<your-production-domain>/**",
 ]
 ```
 
 This matters specifically because SIWS validates the message URI against this
-allow-list (per project memory: sign-in fails otherwise). Then:
+allow-list. Get it wrong and wallet sign-in fails with **"Signed Solana message
+is using URI which is not allowed on this server, message was signed for another
+app"** — a 400 on `POST /auth/v1/token?grant_type=web3`, visible in the
+project's Auth logs. Two details decide whether the list is right:
+
+- **The signed URI is the whole page URL, not the origin.** `auth-js` sets
+  `uri = window.location.href` (`GoTrueClient.js`, `signInWithWeb3`), so a user
+  who connects their wallet from `/launchpad/apply` signs
+  `https://<domain>/launchpad/apply`. Listing only the bare origin authorises
+  sign-in from the site root and nowhere else.
+- **`**`, not `*`.** A single star does not cross `/`, so
+  `https://<domain>/*` covers `/portfolio` but rejects `/collections/<id>`.
+
+Both hostnames need entries if the site answers on apex *and* `www` — the wallet
+signs whichever one the browser is actually on. Same for the
+`*.vercel.app` alias, if you sign in there to smoke-test a deploy.
+
+Note that `site_url` is deliberately **not** changed to the production domain in
+`config.toml`: it stays `http://localhost:3000` so that a later `config push`
+from a dev machine cannot clobber production's value. Nothing depends on it here
+(wallet-only auth sends no emails), and the allow-list above is what actually
+authorises sign-in. Then:
 
 ```sh
 pnpm supabase config push --project-ref <mainnet-project-ref>
@@ -255,9 +277,29 @@ keep pointing at the devnet project):
 | `NEXT_PUBLIC_SOLANA_CLUSTER` | `mainnet-beta` |
 | `NEXT_PUBLIC_SOLANA_RPC_URL` | Helius mainnet **client** key URL from step 1 |
 | `NEXT_PUBLIC_SETTLEMENT_AUTHORITY` | mainnet settlement authority **public** key from step 2 |
+| `COINGECKO_API_KEY` | *Optional.* CoinGecko **Demo** (free) key — see below |
 
-That's the complete set — the app reads no other environment variable, and no
-server-only one.
+That's the complete set. Every variable but the last is `NEXT_PUBLIC_*`.
+
+**`COINGECKO_API_KEY` is the one server-only variable, and the only optional
+one.** Get a free Demo key at <https://www.coingecko.com/en/developers/dashboard>
+(no card required) and set it **without** a `NEXT_PUBLIC_` prefix, so it stays on
+the server and out of the browser bundle. `lib/price/sol.ts` is called only from
+server components (`components/site-header.tsx` and the nft / portfolio /
+collection / launchpad pages), so nothing in the browser ever needs it.
+
+Skipping it is fine — the app then calls the same endpoint keyless on CoinGecko's
+shared public tier, where the rate limit is per IP and shared with everyone else
+on your egress. Either way, a failed fetch logs `[sol-usd]` to the Vercel runtime
+log and falls back to a hardcoded rate; the USD figure is display-only and never
+enters a listing price or a settlement amount.
+
+Note this key is **not** a Supabase function secret — no Edge Function fetches
+prices, so do not `supabase secrets set` it.
+
+If you later upgrade to a paid **Pro** plan, changing this value alone is not
+enough: Pro keys must go to `pro-api.coingecko.com` with an `x-cg-pro-api-key`
+header, both of which are hardcoded for the Demo tier in `lib/price/sol.ts`.
 
 **Use the variable name `NEXT_PUBLIC_SUPABASE_ANON_KEY` exactly.** If your project
 issues what the dashboard calls a *publishable* key, put that value under this
@@ -268,8 +310,10 @@ clear error. (The `.env.prod` file in this checkout has exactly that mistake.)
 
 Two more things about these vars:
 
-- They are inlined into the bundle at **build** time. Editing one in the Vercel
-  dashboard does nothing until you redeploy.
+- The `NEXT_PUBLIC_*` ones are inlined into the bundle at **build** time. Editing
+  one in the Vercel dashboard does nothing until you redeploy. `COINGECKO_API_KEY`
+  is the exception: it's read on the server per request, so a change there takes
+  effect on save (allowing for the 60s `revalidate` cache).
 - `proxy.ts` — Next 16's middleware, note the filename — runs on nearly every
   request and reads the two Supabase vars too, so they must be present for the
   server runtime, not just the client build.
