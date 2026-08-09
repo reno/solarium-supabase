@@ -46,8 +46,6 @@ export function WalletMenu({ user, solUsd }: { user: WalletMenuUser | null; solU
     const balanceSol = balance !== null ? Number(balance) / 1e9 : null;
     const menuLinks: Array<{ href: string; label: string; icon: string }> = [
       ...(user.username ? [{ href: `/u/${user.username}`, label: "Profile", icon: "user" as const }] : []),
-      { href: "/portfolio", label: "Portfolio", icon: "wallet" },
-      { href: "/portfolio?tab=activity", label: "Activity", icon: "activity" },
     ];
     return (
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-6)" }}>
