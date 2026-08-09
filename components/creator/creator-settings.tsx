@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { Button, Card, Input, Select, Switch } from "@/components/design";
 import { createClient } from "@/lib/supabase/client";
+import { friendlyError } from "@/lib/errors";
 
 const LABEL: React.CSSProperties = {
   display: "block",
@@ -44,7 +45,7 @@ export function CreatorSettings({ collections, royaltiesEarnedSol }: { collectio
     setMsg(null);
     const { error } = await supabase.from("collections").update({ royalty_bps: Math.round(pct * 100) }).eq("id", collectionId);
     setBusy(false);
-    if (error) setMsg({ tone: "err", text: error.message });
+    if (error) setMsg({ tone: "err", text: friendlyError(error, "Could not save the royalty.") });
     else {
       setMsg({ tone: "ok", text: "Royalty saved." });
       router.refresh();

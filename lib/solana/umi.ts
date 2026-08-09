@@ -42,8 +42,6 @@ function toUmiSigner(
       );
     },
     async signAllTransactions(transactions: UmiTransaction[]) {
-      // The wallet-standard bridge throws on arrays > 1, so sign sequentially.
-      // One wallet prompt per transaction, not one total.
       const signed: UmiTransaction[] = [];
       for (const transaction of transactions) {
         signed.push(await this.signTransaction(transaction));
@@ -56,9 +54,6 @@ function toUmiSigner(
 export function createUmiForWallet(
   kitSigner: TransactionModifyingSigner
 ): Umi {
-  // `fetch` routes every request — including the polling web3.js does inside
-  // confirmTransaction — through the global pacer. `commitment` is otherwise "finalized",
-  // which makes each read wait for a state the deploy steps don't need and don't check.
   const umi = createUmi(getRpcUrl(), {
     commitment: "confirmed",
     fetch: throttledFetch,

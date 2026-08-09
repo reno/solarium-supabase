@@ -1,20 +1,3 @@
-/**
- * Authoring a drop manifest — the per-item half of a generative drop.
- *
- * A candy machine config line carries only a URI (`{n}.json`), so an item's artwork and its
- * traits exist nowhere on chain: they live in that JSON, which the `candy-mint` edge function
- * reads back into `nfts.image_url` and `nfts.traits`. The manifest is what the creator uploads
- * once, at drop-creation time, so the deploy step knows which image and which attributes belong
- * to item #n instead of stamping the collection cover onto all of them.
- *
- * Rarity is *not* a per-mint probability — candy machine mints each config line exactly once, so
- * a trait is rare because few items in the pool carry it. The manifest is therefore the only
- * place rarity is decided, and `rankManifest` settles it before a single item mints.
- *
- * The format itself (types, paths, `parseManifest`) lives in supabase/functions/_shared and is
- * re-exported here, because the `reveal` edge function reads manifests too.
- */
-
 export * from "@/supabase/functions/_shared/manifest";
 
 import {
@@ -24,13 +7,12 @@ import {
   type DropManifest,
   type ManifestTrait,
 } from "@/supabase/functions/_shared/manifest";
+import { safeExtension } from "@/lib/media/validate";
 
-export function extensionOf(filename: string): string {
-  return filename.includes(".") ? filename.slice(filename.lastIndexOf(".") + 1).toLowerCase() : "png";
+export function extensionOf(filename: string, contentType?: string): string {
+  return safeExtension(filename, contentType);
 }
 
-// "10.png" must not sort ahead of "2.png": when the traits file doesn't name indices, file order
-// is item order, and a lexicographic sort would silently shuffle the whole drop.
 const NATURAL = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 export function orderItemFiles<T extends { name: string }>(files: readonly T[]): T[] {
@@ -43,8 +25,6 @@ function isIndexKey(key: string): boolean {
   return INDEX_KEYS.has(key.trim().toLowerCase());
 }
 
-// A single scanner rather than split("\n"): a quoted trait value may contain the delimiter or a
-// newline, and losing either one silently misaligns every column after it.
 function parseDelimited(text: string, delimiter: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -115,8 +95,6 @@ function parseTraitsDelimited(text: string, delimiter: string): Map<number, Mani
 }
 
 function traitsFromEntry(entry: Record<string, unknown>): ManifestTrait[] {
-  // An art engine's export is usually already in Metaplex attribute shape; a hand-written file is
-  // usually a flat layer→value object. Both are obvious to a human, so accept both.
   const attributes = entry.attributes;
   if (Array.isArray(attributes)) {
     return attributes
@@ -174,7 +152,6 @@ export function parseTraitsFile(text: string, filename: string): Map<number, Man
   return parseTraitsDelimited(text, ",");
 }
 
-// Every item gets every layer, in first-seen order, with absences written as "None".
 export function normalizeTraits(byIndex: Map<number, ManifestTrait[]>): Map<number, ManifestTrait[]> {
   const layers: string[] = [];
   for (const traits of byIndex.values()) {
@@ -196,26 +173,14 @@ export function normalizeTraits(byIndex: Map<number, ManifestTrait[]>): Map<numb
   return filled;
 }
 
-/**
- * Generating a distribution instead of uploading one.
- *
- * A percentage here is a **quota over the fixed pool, not a per-mint probability**: candy machine
- * mints each config line exactly once, so "5% Gold" has to mean exactly 5% of the items carry
- * Gold, decided now. Sampling per item would land on 7 or 13 out of 200 and quietly make the
- * advertised rarity false, so the shares are apportioned by largest remainder and then dealt out
- * shuffled. The unallocated share of a layer becomes "None", which is a real value here — see
- * ABSENT_TRAIT_VALUE — so a layer only 5% of items carry is itself the rare thing.
- */
 export type TraitWeight = { trait: string; value: string; percent: number };
 
 export type TraitPlanLayer = {
   trait: string;
   values: { value: string; percent: number; count: number }[];
-  absent: number; // items taking "None" for this layer, i.e. whatever the percentages left over
+  absent: number;
 };
 
-// Layers are grouped case-insensitively but keep their first-seen spelling, so "background" and
-// "Background" can't become two layers that each fill the other with "None".
 function groupWeights(rows: readonly TraitWeight[]): { trait: string; values: TraitWeight[] }[] {
   const layers = new Map<string, { trait: string; values: TraitWeight[] }>();
   for (const row of rows) {
@@ -243,7 +208,6 @@ export function traitPlanIssue(rows: readonly TraitWeight[]): string | null {
       if (seen.has(value.toLowerCase())) return `${trait} lists "${value}" twice.`;
       seen.add(value.toLowerCase());
     }
-    // Rounded, so three values at 33.34 read as 100 rather than failing by a hundredth.
     const total = Math.round(values.reduce((sum, { percent }) => sum + percent, 0) * 100) / 100;
     if (total > 100) {
       return `${trait}'s values add up to ${total}% — they can total at most 100%, and whatever is left becomes "None".`;
@@ -252,9 +216,6 @@ export function traitPlanIssue(rows: readonly TraitWeight[]): string | null {
   return null;
 }
 
-// Largest remainder: floor every share, then hand the leftover items to the biggest fractions.
-// Ties go to the earlier bucket and "None" is always last, so a 5%-of-20-items value lands its
-// one item rather than losing the rounding to the layer's leftover.
 function apportion(shares: readonly number[], total: number): number[] {
   const exact = shares.map((share) => (share / 100) * total);
   const counts = exact.map((value) => Math.floor(value));
@@ -266,11 +227,6 @@ function apportion(shares: readonly number[], total: number): number[] {
   return counts;
 }
 
-/**
- * Resolve percentages into the item counts they actually produce, so the wizard can show what a
- * creator is about to get. 1% of a 50-item drop is half an item and rounds to none of them —
- * better to see the 0 than to be told 1% and shipped nothing.
- */
 export function planTraits(rows: readonly TraitWeight[], supply: number): TraitPlanLayer[] {
   return groupWeights(rows).map(({ trait, values }) => {
     const declared = values.reduce((sum, { percent }) => sum + percent, 0);
@@ -283,8 +239,6 @@ export function planTraits(rows: readonly TraitWeight[], supply: number): TraitP
   });
 }
 
-// Seeded so the counts the wizard previews are the ones it uploads, and so a re-render doesn't
-// reshuffle a drop the creator was already looking at.
 function mulberry32(seed: number): () => number {
   let state = seed;
   return () => {
@@ -311,13 +265,6 @@ function shuffle<T>(values: T[], random: () => number): T[] {
   return values;
 }
 
-/**
- * Deal the planned counts out across the drop, in the same shape `parseTraitsFile` returns so the
- * wizard can't tell a generated drop from an uploaded one.
- *
- * Each layer is shuffled on its own seed: dealing them all in plan order would put every layer's
- * rarest value on item 1, which is not a distribution but a single golden ticket.
- */
 export function generateTraits(rows: readonly TraitWeight[], supply: number): Map<number, ManifestTrait[]> | null {
   const issue = traitPlanIssue(rows);
   if (issue) throw new Error(issue);
@@ -341,8 +288,6 @@ export function generateTraits(rows: readonly TraitWeight[], supply: number): Ma
   return byIndex;
 }
 
-// A template rather than a toy: it is numbered for the drop the creator has actually uploaded, so
-// the file they download is the file they can fill in and hand back.
 const SAMPLE_LAYERS: { trait: string; values: string[] }[] = [
   { trait: "Background", values: ["Deep Space", "Dawn", "Dusk"] },
   { trait: "Body", values: ["Chrome", "Matte"] },
@@ -435,22 +380,6 @@ export function buildManifest({
 
 export type ItemRarity = { index: number; score: number; rank: number; total: number };
 
-/**
- * Rank the whole drop before any of it mints.
- *
- * `recompute_collection_rarity()` ranks the rows in `nfts`, and those only exist once a buyer
- * has minted — so mid-drop its frequencies describe whatever fraction has sold, and every rank
- * churns until sellout. A candy machine mints each config line exactly once, so the full trait
- * distribution is already fixed here, in the manifest.
- *
- * The formula mirrors the SQL exactly so the two agree on any collection they both see: an
- * item's score is the sum over its traits of (items carrying that trait) / (items sharing that
- * exact value), i.e. inverse frequency, and higher is rarer. Ties break on item number where
- * the SQL breaks on nft id — both are arbitrary but deterministic.
- *
- * Returns [] for a drop with no traits at all: rarity is not a real quantity there, and a null
- * rank is the honest answer rather than a ranking of identical zero scores.
- */
 export function rankManifest(manifest: DropManifest): ItemRarity[] {
   const key = (trait: string, value: string) => `${trait} ${value}`;
   const carrying = new Map<string, number>();

@@ -19,7 +19,6 @@ export type PhaseInput = {
 
 export const MAX_PHASES = 200;
 
-// Guard labels are a fixed 6 bytes on chain, so a phase's name can't be the label.
 export function phaseGroupLabel(index: number): string {
   if (index < 0 || index >= MAX_PHASES) {
     throw new Error(`A drop supports at most ${MAX_PHASES} phases.`);
@@ -33,7 +32,6 @@ export function phaseIndexFromLabel(label: string): number {
   return Number(index[1]);
 }
 
-// Ids start at 1 so a phase never uses 0, which the program reads as "unset".
 export function mintLimitId(index: number): number {
   return index + 1;
 }
@@ -126,9 +124,6 @@ export function guardGroupsFor(
   ctx: GuardContext,
   nowMs: number = Date.now()
 ): { label: string; guards: Partial<DefaultGuardSetArgs> }[] {
-  // Index is assigned before filtering: surviving phases keep their original index, because
-  // mintLimit counters are PDAs keyed by an id derived from it. Renumbering silently resets
-  // every wallet's count on the next guard sync.
   const groups = orderPhases(phases)
     .map((phase, index) => ({ phase, index }))
     .filter(({ phase }) => !hasEnded(phase, nowMs))

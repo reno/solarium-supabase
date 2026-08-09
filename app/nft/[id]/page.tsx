@@ -63,7 +63,9 @@ export default async function NftDetailPage({
   const priceSol = activeListing ? lamportsToSol(priceLamports) : null;
   const royaltyBps = collection?.royalty_bps ?? 0;
   const viewerIsCreator = !!user && collection?.creator_id === user.id;
-  const chargedRoyaltyBps = viewerIsCreator ? 0 : royaltyBps;
+  const sellerIsCreator =
+    !!activeListing && !!collection?.creator_id && collection.creator_id === String(activeListing.seller_id);
+  const chargedRoyaltyBps = viewerIsCreator || sellerIsCreator ? 0 : royaltyBps;
   const buyerTotalSol = activeListing
     ? lamportsToSol(priceLamports + (priceLamports * BigInt(chargedRoyaltyBps)) / 10000n + feeOf(priceLamports))
     : null;

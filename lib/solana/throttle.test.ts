@@ -1,7 +1,3 @@
-/**
- * The pacer only shows up as an absence — requests that never got refused — so its behaviour is
- * pinned here rather than rediscovered the next time a deploy trips a free-tier limit.
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetThrottleForTests, throttled, throttledFetch } from "./throttle";
@@ -30,16 +26,13 @@ describe("throttledFetch", () => {
     const fetchMock = vi.fn().mockResolvedValue(ok());
     vi.stubGlobal("fetch", fetchMock);
 
-    // The shape of the problem: several polls kicked off in the same tick.
     const all = Promise.all(
       Array.from({ length: 5 }, () => throttledFetch("https://rpc.test"))
     );
 
-    // First slot is immediate; the rest are still waiting on their turn.
     await vi.advanceTimersByTimeAsync(0);
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    // At 10/s each subsequent slot is ~100ms out (plus jitter), so 250ms buys ~2 more.
     await vi.advanceTimersByTimeAsync(250);
     expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(fetchMock.mock.calls.length).toBeLessThan(5);
@@ -58,7 +51,6 @@ describe("throttledFetch", () => {
 
     const call = throttledFetch("https://rpc.test");
 
-    // Still inside the window the endpoint asked us to wait out.
     await vi.advanceTimersByTimeAsync(1500);
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -76,8 +68,6 @@ describe("throttledFetch", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    // A second caller queued after the refusal must wait out the same window, even though at
-    // 100/s its own slot would otherwise be 10ms away.
     const second = throttledFetch("https://rpc.test").catch(() => null);
     await vi.advanceTimersByTimeAsync(100);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -108,7 +98,6 @@ describe("throttled", () => {
     void throttledFetch("https://rpc.test");
     const gated = throttled(run);
 
-    // The fetch took the first slot, so the transport call waits ~250ms for the next one.
     await vi.advanceTimersByTimeAsync(0);
     expect(run).not.toHaveBeenCalled();
 

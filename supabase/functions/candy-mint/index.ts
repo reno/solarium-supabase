@@ -3,18 +3,32 @@ import { publicKey, type Umi } from "npm:@metaplex-foundation/umi@1.5.1";
 import { createUmi } from "npm:@metaplex-foundation/umi-bundle-defaults@1.5.1";
 import { fetchAsset, mplCore } from "npm:@metaplex-foundation/mpl-core@1.10.0";
 
-import { rpcCall } from "../_shared/rpc.ts";
+import { rpcCallForResult } from "../_shared/rpc.ts";
+import { internalStorageUrl, isMarketplaceStorageUrl } from "../_shared/storage.ts";
+import { isBase58, isUuid } from "../_shared/tx.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const MAX_BODY_BYTES = 4096;
+const MAX_METADATA_BYTES = 256 * 1024;
+const METADATA_TIMEOUT_MS = 5000;
+const MAX_TRAITS = 64;
+const MAX_TRAIT_FIELD = 128;
+const MAX_ITEM_NUMBER = 1_000_000;
+
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+function fail(status: number, message: string, cause?: unknown): Response {
+  if (cause !== undefined) console.error(`[candy-mint] ${message}`, cause);
+  return json(status, { error: message });
 }
 
 function getUmi(): { umi: Umi; rpcUrl: string } {
@@ -31,32 +45,101 @@ async function walletOf(admin: Admin, userId: string): Promise<string | null> {
 }
 
 function itemNumberFromName(name: string): number | null {
-  const match = /#\s*(\d+)\s*$/.exec(name);
-  return match ? Number(match[1]) : null;
+  const match = /#\s*(\d{1,9})\s*$/.exec(name);
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isSafeInteger(n) && n >= 1 && n <= MAX_ITEM_NUMBER ? n : null;
 }
 
 type ItemMetadata = { image: string | null; traits: { trait: string; value: string }[] };
 
-// The item's metadata JSON is the only place its artwork and attributes exist — the config line
-// carries just a URI. Traits are what recompute_collection_rarity ranks, so a drop that ships
-// per-item attributes gets real rarity; one that doesn't gets an empty array and a null rank,
-// which is the honest answer rather than a rank derived from nothing.
 async function readMetadata(uri: string): Promise<ItemMetadata> {
+  const empty: ItemMetadata = { image: null, traits: [] };
+  if (!isMarketplaceStorageUrl(uri)) {
+    console.warn(`[candy-mint] not fetching metadata hosted outside storage: ${uri}`);
+    return empty;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), METADATA_TIMEOUT_MS);
   try {
-    const response = await fetch(uri);
-    if (!response.ok) return { image: null, traits: [] };
-    const metadata = await response.json();
+    const response = await fetch(internalStorageUrl(uri), { signal: controller.signal, redirect: "error" });
+    if (!response.ok) return empty;
+    const declared = Number(response.headers.get("content-length") ?? "0");
+    if (declared > MAX_METADATA_BYTES) return empty;
+    const text = await response.text();
+    if (text.length > MAX_METADATA_BYTES) return empty;
+
+    const metadata = JSON.parse(text);
     const attributes = Array.isArray(metadata?.attributes) ? metadata.attributes : [];
     const traits = attributes
+      .slice(0, MAX_TRAITS)
       .map((a: { trait_type?: unknown; trait?: unknown; value?: unknown }) => ({
-        trait: String(a?.trait_type ?? a?.trait ?? ""),
-        value: String(a?.value ?? ""),
+        trait: String(a?.trait_type ?? a?.trait ?? "").slice(0, MAX_TRAIT_FIELD),
+        value: String(a?.value ?? "").slice(0, MAX_TRAIT_FIELD),
       }))
       .filter((t: { trait: string; value: string }) => t.trait !== "" && t.value !== "");
-    return { image: typeof metadata?.image === "string" ? metadata.image : null, traits };
+    const image = isMarketplaceStorageUrl(metadata?.image) ? metadata.image : null;
+    return { image, traits };
   } catch {
-    return { image: null, traits: [] };
+    return empty;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+const ASSET_LOOKUP_ATTEMPTS = 5;
+
+async function fetchAssetWhenVisible(umi: Umi, assetAddress: string) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fetchAsset(umi, publicKey(assetAddress));
+    } catch (e) {
+      if (attempt >= ASSET_LOOKUP_ATTEMPTS) {
+        console.warn(`[candy-mint] ${assetAddress} still not visible after ${attempt} attempts`, e);
+        return null;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
+    }
+  }
+}
+
+type ExistingNft = {
+  id: string;
+  image_url: string | null;
+  metadata_url: string | null;
+  traits: unknown;
+};
+
+type CollectionForHeal = {
+  id: string;
+  cover_url: string | null;
+  reveal_at: string | null;
+};
+
+async function healPlaceholderRow(
+  admin: Admin,
+  collection: CollectionForHeal,
+  row: ExistingNft
+): Promise<boolean> {
+  if (collection.reveal_at !== null) return false;
+  const traitCount = Array.isArray(row.traits) ? row.traits.length : 0;
+  const looksLikeFallback = traitCount === 0 || row.image_url === collection.cover_url;
+  if (!looksLikeFallback || !row.metadata_url) return false;
+
+  const metadata = await readMetadata(row.metadata_url);
+  const patch: Record<string, unknown> = {};
+  if (metadata.image && metadata.image !== row.image_url) patch.image_url = metadata.image;
+  if (metadata.traits.length > 0 && traitCount === 0) patch.traits = metadata.traits;
+  if (Object.keys(patch).length === 0) return false;
+
+  const { error } = await admin.from("nfts").update(patch).eq("id", row.id);
+  if (error) {
+    console.error(`[candy-mint] could not heal ${row.id}`, error);
+    return false;
+  }
+  console.log(`[candy-mint] healed ${row.id} from ${row.metadata_url}`);
+  return true;
 }
 
 async function recordMint(
@@ -73,7 +156,7 @@ async function recordMint(
     )
     .eq("id", collectionId)
     .maybeSingle();
-  if (collectionError) throw new Error(`Failed to load the collection: ${collectionError.message}`);
+  if (collectionError) return fail(500, "Could not load the collection.", collectionError);
   if (!collection) return json(404, { error: "Collection not found." });
 
   const machine = Array.isArray(collection.candy_machines)
@@ -89,32 +172,49 @@ async function recordMint(
 
   const { data: existing } = await admin
     .from("nfts")
-    .select("id")
+    .select("id, image_url, metadata_url, traits")
     .eq("asset_address", assetAddress)
     .maybeSingle();
-  if (existing) return json(200, { nftId: existing.id, alreadyRecorded: true });
+  if (existing) {
+    const healed = await healPlaceholderRow(
+      admin,
+      collection as unknown as CollectionForHeal,
+      existing as unknown as ExistingNft
+    );
+    return json(200, { nftId: existing.id, alreadyRecorded: true, healed });
+  }
 
   const { umi, rpcUrl } = getUmi();
 
-  const tx = await rpcCall(rpcUrl, "getTransaction", [
+  const tx = await rpcCallForResult(rpcUrl, "getTransaction", [
     signature,
     { commitment: "confirmed", encoding: "json", maxSupportedTransactionVersion: 0 },
   ]);
   if (!tx) return json(409, { error: "Transaction not found or not confirmed yet." });
   if (tx.meta?.err) return json(409, { error: "Transaction failed on chain." });
-  const accountKeys: string[] = tx.transaction.message.accountKeys;
+  if (!tx.meta?.preBalances || !tx.meta?.postBalances) {
+    return json(409, { error: "Transaction is missing execution details." });
+  }
+
+  const accountKeys: string[] = tx.transaction?.message?.accountKeys ?? [];
   if (accountKeys[0] !== buyerWallet) {
     return json(409, { error: "That mint was not paid for by your wallet." });
   }
-  if (!accountKeys.includes(assetAddress) || !accountKeys.includes(machine.candy_machine_address)) {
+  const assetIndex = accountKeys.indexOf(assetAddress);
+  if (assetIndex < 0 || !accountKeys.includes(machine.candy_machine_address)) {
     return json(409, { error: "That transaction is not a mint from this drop." });
   }
+  const assetPre = BigInt(tx.meta.preBalances[assetIndex] ?? 0);
+  const assetPost = BigInt(tx.meta.postBalances[assetIndex] ?? 0);
+  if (assetPre !== 0n || assetPost === 0n) {
+    return json(409, { error: "That transaction did not mint this item." });
+  }
 
-  let asset;
-  try {
-    asset = await fetchAsset(umi, publicKey(assetAddress));
-  } catch {
-    return json(409, { error: "Asset not found on chain yet." });
+  const asset = await fetchAssetWhenVisible(umi, assetAddress);
+  if (!asset) {
+    return json(409, {
+      error: "That item hasn't appeared on chain yet. Reload the drop page in a moment to finish recording it.",
+    });
   }
   if (asset.owner !== buyerWallet) {
     return json(409, { error: "That item is not owned by your wallet." });
@@ -125,12 +225,15 @@ async function recordMint(
   if (machine.prefix_uri && !asset.uri.startsWith(machine.prefix_uri)) {
     return json(409, { error: "That item's metadata does not belong to this drop." });
   }
+  if (!isMarketplaceStorageUrl(asset.uri)) {
+    console.warn(`[candy-mint] recording ${assetAddress} with off-marketplace metadata: ${asset.uri}`);
+  }
 
   const creatorWallet = await walletOf(admin, collection.creator_id);
   const creatorIndex = creatorWallet ? accountKeys.indexOf(creatorWallet) : -1;
   const paid =
     creatorIndex >= 0
-      ? BigInt(tx.meta.postBalances[creatorIndex]) - BigInt(tx.meta.preBalances[creatorIndex])
+      ? BigInt(tx.meta.postBalances[creatorIndex] ?? 0) - BigInt(tx.meta.preBalances[creatorIndex] ?? 0)
       : 0n;
 
   const metadata = await readMetadata(asset.uri);
@@ -139,10 +242,6 @@ async function recordMint(
 
   const itemNumber = itemNumberFromName(asset.name);
 
-  // Rarity for a manifest-based drop was ranked over the whole pool when the drop was created,
-  // so it is a lookup rather than a recount — see collection_item_rarity. Withheld entirely
-  // while the drop is unrevealed (reveal_at non-null), because handing a buyer their rank would
-  // give away what the placeholder art is hiding; the `reveal` function backfills it.
   const unrevealed = collection.reveal_at !== null;
   let planned: { rarity_rank: number; rarity_total: number } | null = null;
   if (!unrevealed && itemNumber != null) {
@@ -180,7 +279,7 @@ async function recordMint(
       const { data: raced } = await admin.from("nfts").select("id").eq("asset_address", assetAddress).maybeSingle();
       if (raced) return json(200, { nftId: raced.id, alreadyRecorded: true });
     }
-    return json(500, { error: insertError.message });
+    return fail(500, "Could not record this mint.", insertError);
   }
 
   await admin.from("activities").insert({
@@ -192,10 +291,6 @@ async function recordMint(
     tx_signature: signature,
   });
 
-  // Only for legacy drops with no planned ranking: this re-ranks over the items minted so far,
-  // which is a moving target until sellout. The count is what decides, not the lookup above — a
-  // single miss (a read blip, an item the manifest didn't rank) must not send a planned drop
-  // down this path and overwrite every rank it already had.
   if (planned === null && !unrevealed && metadata.traits.length > 0) {
     const { count: plannedRows } = await admin
       .from("collection_item_rarity")
@@ -217,12 +312,15 @@ async function recordMint(
     .update({ items_redeemed: Math.min(count ?? 0, machine.items_available) })
     .eq("id", machine.id);
 
-  return json(200, { nftId: nft.id, name: asset.name, itemNumber: itemNumberFromName(asset.name) });
+  return json(200, { nftId: nft.id, name: asset.name, itemNumber });
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
+    const declared = Number(req.headers.get("content-length") ?? "0");
+    if (declared > MAX_BODY_BYTES) return json(413, { error: "Request body too large." });
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
@@ -233,17 +331,22 @@ Deno.serve(async (req) => {
     if (!user) return json(401, { error: "Sign in to continue." });
 
     const admin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const body = await req.json();
-    if (
-      typeof body.collectionId !== "string" ||
-      typeof body.assetAddress !== "string" ||
-      typeof body.signature !== "string"
-    ) {
+
+    const raw = await req.text();
+    if (raw.length > MAX_BODY_BYTES) return json(413, { error: "Request body too large." });
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return json(400, { error: "Malformed request." });
+    }
+
+    if (!isUuid(body.collectionId) || !isBase58(body.assetAddress) || !isBase58(body.signature)) {
       return json(400, { error: "collectionId, assetAddress and signature are required." });
     }
     return await recordMint(admin, user.id, body.collectionId, body.assetAddress, body.signature);
   } catch (e) {
-    console.error(e);
-    return json(500, { error: e instanceof Error ? e.message : "Recording the mint failed." });
+    console.error("[candy-mint] unhandled", e);
+    return json(500, { error: "Recording the mint failed. Please try again." });
   }
 });

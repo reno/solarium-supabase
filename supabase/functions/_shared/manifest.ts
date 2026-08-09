@@ -1,16 +1,8 @@
-/**
- * The drop manifest format — the part both the Next app and the Deno edge functions read.
- *
- * Authoring it (parsing a creator's CSV/JSON, validating, ranking) lives in
- * `lib/launchpad/manifest.ts`, which re-exports everything here. This file holds only what the
- * `reveal` function also needs, and so must stay free of any import.
- */
-
 export type ManifestTrait = { trait: string; value: string };
 
 export type ManifestItem = {
-  index: number; // 1-based; matches the `{index}.json` written at deploy time
-  image: string; // public URL of this item's own artwork
+  index: number;
+  image: string;
   imageType: string;
   traits: ManifestTrait[];
 };
@@ -27,14 +19,11 @@ export const MEDIA_BUCKET = "nft-media";
 
 export const MAX_DROP_SUPPLY = 250;
 
-// A layer an item didn't roll is still a value it has, and recompute_collection_rarity scores
-// items by summing 1/frequency over their traits — so an item that simply omits "Halo" scores
-// lower than one with a common halo, which reads as "less rare" for no reason. Writing the
-// absence explicitly keeps every item's trait count equal and the scores comparable.
+export const MAX_TRAITS_PER_ITEM = 64;
+export const MAX_TRAIT_FIELD = 128;
+
 export const ABSENT_TRAIT_VALUE = "None";
 
-// The folder *is* the collection id, so the wizard's uploads and the deploy step's metadata
-// writes land in the same place without anything having to record where that place was.
 export function dropFolder(creatorId: string, collectionId: string): string {
   return `${creatorId}/${collectionId}`;
 }
@@ -43,15 +32,10 @@ export function manifestPath(folder: string): string {
   return `${folder}/${MANIFEST_FILE}`;
 }
 
-// Item images sit in their own subfolder: only `{n}.json` may live directly under the folder,
-// because the candy machine's prefixUri covers everything after it and uriSettings pins the
-// remainder to a fixed length.
 export function itemImagePath(folder: string, index: number, extension: string): string {
   return `${folder}/items/${index}.${extension}`;
 }
 
-// Read back at deploy and at reveal. Deliberately strict: a half-readable manifest would point
-// items at the wrong art, which no later step can undo.
 export function parseManifest(value: unknown): DropManifest {
   const manifest = value as Partial<DropManifest> | null;
   if (!manifest || typeof manifest !== "object") {
@@ -64,6 +48,11 @@ export function parseManifest(value: unknown): DropManifest {
   }
   if (!Array.isArray(manifest.items) || manifest.items.length === 0) {
     throw new Error("This drop's item manifest has no items.");
+  }
+  if (manifest.items.length > MAX_DROP_SUPPLY) {
+    throw new Error(
+      `This drop's item manifest lists ${manifest.items.length} items; the maximum is ${MAX_DROP_SUPPLY}.`
+    );
   }
   if (manifest.supply !== manifest.items.length) {
     throw new Error(
@@ -88,7 +77,11 @@ export function parseManifest(value: unknown): DropManifest {
       traits: Array.isArray(item.traits)
         ? item.traits
             .filter((trait): trait is ManifestTrait => Boolean(trait) && typeof trait.trait === "string")
-            .map(({ trait, value }) => ({ trait, value: String(value ?? "") }))
+            .slice(0, MAX_TRAITS_PER_ITEM)
+            .map(({ trait, value }) => ({
+              trait: trait.slice(0, MAX_TRAIT_FIELD),
+              value: String(value ?? "").slice(0, MAX_TRAIT_FIELD),
+            }))
         : [],
     };
   });

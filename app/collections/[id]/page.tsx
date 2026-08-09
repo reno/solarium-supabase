@@ -103,10 +103,6 @@ export default async function CollectionDetailPage({
     supabase.from("candy_machines").select("items_available, items_redeemed").eq("collection_id", id).maybeSingle(),
   ]);
 
-  // Minting itself stays on the launchpad page, which owns the guard groups, the wallet signature
-  // and the candy-mint recording — this is a way in, not a second implementation. Only offered
-  // when there is something to mint: a collection with no machine is secondary-only, and a
-  // sold-out one would send buyers to a page that can no longer sell them anything.
   const machine = machineRes.data as { items_available: number; items_redeemed: number } | null;
   const unminted = machine ? machine.items_available - machine.items_redeemed : 0;
 

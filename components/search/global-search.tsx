@@ -13,6 +13,13 @@ type SearchResult = {
   href: string;
 };
 
+const SEARCH_SYNTAX = /[%_*\\,().:]/g;
+const MAX_SEARCH_LENGTH = 64;
+
+function searchTerm(raw: string): string {
+  return raw.toLowerCase().replace(SEARCH_SYNTAX, " ").trim().slice(0, MAX_SEARCH_LENGTH);
+}
+
 export function GlobalSearch() {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -32,7 +39,7 @@ export function GlobalSearch() {
   }, []);
 
   useEffect(() => {
-    if (!query.trim()) {
+    if (!searchTerm(query)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronous reset on empty query
       setResults([]);
       setLoading(false);
@@ -44,7 +51,7 @@ export function GlobalSearch() {
 
     const search = async () => {
       const supabase = createClient();
-      const q = query.toLowerCase();
+      const q = searchTerm(query);
 
       const [collectionsRes, nftsRes, profilesRes] = await Promise.all([
         supabase
@@ -60,9 +67,22 @@ export function GlobalSearch() {
         supabase
           .from("profiles")
           .select("id, username, wallet_address")
-          .or(`username.ilike.%${q}%,wallet_address.ilike.%${q}%`)
+          .ilike("username", `%${q}%`)
           .limit(5),
-      ]);
+        supabase
+          .from("profiles")
+          .select("id, username, wallet_address")
+          .ilike("wallet_address", `%${q}%`)
+          .limit(5),
+      ]).then(([collections, nfts, byUsername, byWallet]) => {
+        const seen = new Set<string>();
+        const merged = [...(byUsername.data ?? []), ...(byWallet.data ?? [])].filter((row) => {
+          if (seen.has(row.id)) return false;
+          seen.add(row.id);
+          return true;
+        });
+        return [collections, nfts, { ...byUsername, data: merged.slice(0, 5) }] as const;
+      });
 
       if (cancelled) return;
 

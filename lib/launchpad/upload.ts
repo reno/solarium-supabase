@@ -2,16 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { MEDIA_BUCKET } from "@/lib/launchpad/manifest";
 
-// A 250-item drop is 250 images plus 250 metadata JSONs. Serially that is minutes of round
-// trips; a small pool keeps it to seconds without tripping storage rate limits.
 const UPLOAD_CONCURRENCY = 6;
 
 export function publicUrl(supabase: SupabaseClient, path: string): string {
   return supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path).data.publicUrl;
 }
 
-// Every upload here is an upsert: a deploy that dies halfway is re-run from the top, and the
-// second run must overwrite what the first one wrote rather than fail on "already exists".
 export async function uploadTo(
   supabase: SupabaseClient,
   path: string,
@@ -51,8 +47,6 @@ export async function runPooled<T>(
       try {
         await worker(items[index], index);
       } catch (e) {
-        // One failure ends the whole batch: the remaining runners would only pile up more of
-        // the same error, and Promise.all reports the first one either way.
         stopped = true;
         throw e;
       }

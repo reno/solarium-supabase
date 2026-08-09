@@ -9,15 +9,6 @@ import { useToast } from "@/components/toast/toast-provider";
 import { invokeFunction } from "@/lib/settle/invoke";
 import { createClient } from "@/lib/supabase/client";
 
-/**
- * Delayed reveal, from the creator's side.
- *
- * Nothing here touches the chain. While `reveal_at` is set, every item's metadata JSON points at
- * the collection cover and carries no attributes; revealing rewrites those files with the real
- * art and traits and backfills the items already minted. The button unlocks only once the time
- * has passed — revealing mid-mint would hand the remaining buyers the rarity map the delay
- * exists to withhold.
- */
 export function RevealPanel({
   collectionId,
   revealAt,
@@ -33,7 +24,6 @@ export function RevealPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Null is the schema's "revealed": once the reveal lands there is nothing left to show.
   if (!revealAt) return null;
 
   const due = new Date(revealAt).getTime() <= now * 1000;

@@ -22,7 +22,6 @@ type NftRef = {
   collection?: Reveal | Reveal[] | null;
 };
 
-// Supabase embeds to-one relations as arrays.
 function one<T>(x: T | T[] | null | undefined): T | null | undefined {
   return Array.isArray(x) ? x[0] : x;
 }

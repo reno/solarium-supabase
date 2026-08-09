@@ -116,9 +116,6 @@ function Inner({
   const [manifestError, setManifestError] = useState<string | null>(null);
   const [manifestChecked, setManifestChecked] = useState(false);
 
-  // A drop created through the wizard has a manifest, and it — not a typed number — decides how
-  // many items the machine is sized for. Drops from before per-item uploads have none, and fall
-  // back to the supply field.
   useEffect(() => {
     let cancelled = false;
     readDropManifest(supabase, creatorId, collectionId)

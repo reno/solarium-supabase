@@ -9,6 +9,10 @@ export interface ArtTileProps {
   children?: ReactNode;
 }
 
+function cssUrl(src: string): string {
+  return `url("${src.replace(/["\\]/g, "\\$&")}")`;
+}
+
 export function ArtTile({ src, label = "nft art", ratio = "1 / 1", radius = "var(--radius-media)", style, children }: ArtTileProps) {
   return (
     <div
@@ -20,7 +24,7 @@ export function ArtTile({ src, label = "nft art", ratio = "1 / 1", radius = "var
         overflow: "hidden",
         background: src ? "var(--surface-inset)" : undefined,
         backgroundImage: src
-          ? `url(${src})`
+          ? cssUrl(src)
           : "repeating-linear-gradient(135deg, var(--surface-2) 0 6px, var(--surface-inset) 6px 12px)",
         backgroundSize: "cover",
         backgroundPosition: "center",
