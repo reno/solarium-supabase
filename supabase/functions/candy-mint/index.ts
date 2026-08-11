@@ -34,7 +34,7 @@ function fail(status: number, message: string, cause?: unknown): Response {
 function getUmi(): { umi: Umi; rpcUrl: string } {
   const rpcUrl = Deno.env.get("SOLANA_RPC_URL");
   if (!rpcUrl) throw new Error("SOLANA_RPC_URL is not configured");
-  return { umi: createUmi(rpcUrl).use(mplCore()), rpcUrl };
+  return { umi: createUmi(rpcUrl, { commitment: "confirmed" }).use(mplCore()), rpcUrl };
 }
 
 type Admin = ReturnType<typeof createClient>;
@@ -88,7 +88,7 @@ async function readMetadata(uri: string): Promise<ItemMetadata> {
   }
 }
 
-const ASSET_LOOKUP_ATTEMPTS = 5;
+const ASSET_LOOKUP_ATTEMPTS = 6;
 
 async function fetchAssetWhenVisible(umi: Umi, assetAddress: string) {
   for (let attempt = 1; ; attempt++) {
