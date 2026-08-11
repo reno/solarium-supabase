@@ -5,13 +5,14 @@ import {
   fetchCandyMachine,
   findAllowListProofPda,
   findCandyGuardPda,
-  getCandyMachineSize,
   getMerkleProof,
   getMerkleRoot,
   mintV1,
   mplCandyMachine,
   route,
   updateCandyGuard,
+  MAX_NAME_LENGTH,
+  MAX_URI_LENGTH,
 } from "@metaplex-foundation/mpl-core-candy-machine";
 import { setComputeUnitLimit } from "@metaplex-foundation/mpl-toolbox";
 import {
@@ -55,6 +56,7 @@ import { feeOf } from "@/supabase/functions/_shared/fee";
 import { sha256Hex } from "@/supabase/functions/_shared/tx";
 import { buildNftMetadata } from "@/lib/mint/metadata";
 import { invokeFunction } from "@/lib/settle/invoke";
+import { lamportsToSol } from "@/lib/solana/lamports";
 import { withRpcRetry } from "@/lib/solana/retry";
 
 export type DeployStage = "metadata" | "collection" | "machine" | "items" | "recording";
@@ -261,6 +263,15 @@ export async function deployCandyMachine(params: DeployParams): Promise<DeployRe
     if (supply < 1 || supply > MAX_DROP_SUPPLY) {
       throw new Error(`This drop has ${supply} items, and a drop must have between 1 and ${MAX_DROP_SUPPLY}.`);
     }
+    await requireBalanceFor(umi, {
+      supply,
+      collectionName,
+      needsCollection: !collectionAddress,
+      creatorWallet,
+      phases,
+      allowlist,
+    });
+
     const items = manifest?.items ?? coverOnlyItems(supply, imageUrl, imageType);
     const { prefixName, nameLength } = nameSettings(collectionName, supply);
 
@@ -373,6 +384,18 @@ export async function deployCandyMachine(params: DeployParams): Promise<DeployRe
 
   if (!collectionAddress) {
     throw new Error("This drop's candy machine exists but its collection address is missing — reload and retry.");
+  }
+
+  if (existing) {
+    await requireBalanceFor(umi, {
+      supply,
+      collectionName,
+      needsCollection: false,
+      creatorWallet,
+      phases,
+      allowlist,
+      existing: row,
+    });
   }
 
   onStage?.("items");
@@ -581,20 +604,74 @@ export async function mintFromCandyMachine(params: CandyMintParams): Promise<Can
   return { assetAddress: asset.publicKey, signature, nftId };
 }
 
-export async function estimateDeployCost(
-  baseUmi: Umi,
-  { supply, collectionName, needsCollection }: { supply: number; collectionName: string; needsCollection: boolean }
-): Promise<bigint> {
-  const umi = withCandyMachine(baseUmi);
-  const { prefixName, nameLength } = nameSettings(collectionName, supply);
-  const { uriLength } = uriSettings("", supply);
-  const space = getCandyMachineSize(
-    supply,
-    some({ prefixName, nameLength, prefixUri: "", uriLength, isSequential: false })
+const SIGNATURE_FEE_LAMPORTS = 5_000n;
+const PRIORITY_FEE_ALLOWANCE_PER_TRANSACTION_LAMPORTS = 50_000n;
+const CORE_COLLECTION_ACCOUNT_BYTES = 1 + 32 + 4 + MAX_NAME_LENGTH + 4 + MAX_URI_LENGTH + 4 + 4;
+const COLLECTION_UPDATE_DELEGATE_PLUGIN_BYTES = 128;
+
+function transactionFee(signatures: bigint): bigint {
+  return signatures * SIGNATURE_FEE_LAMPORTS + PRIORITY_FEE_ALLOWANCE_PER_TRANSACTION_LAMPORTS;
+}
+
+export type DeployCostParams = {
+  supply: number;
+  collectionName: string;
+  needsCollection: boolean;
+  creatorWallet: string;
+  phases: PhaseInput[];
+  allowlist: string[];
+  existing?: CandyMachineRow | null;
+};
+
+async function requireBalanceFor(umi: Umi, params: DeployCostParams): Promise<void> {
+  const needed = await estimateDeployCost(umi, params);
+  const balance = await withRpcRetry(() => umi.rpc.getBalance(umi.identity.publicKey));
+  if (balance.basisPoints >= needed) return;
+  throw new Error(
+    `This deploy needs about ${lamportsToSol(needed)} SOL for rent and fees, and your wallet holds ${lamportsToSol(
+      balance.basisPoints
+    )} SOL. Top it up by ${lamportsToSol(needed - balance.basisPoints)} SOL and try again.`
   );
-  const rent = await withRpcRetry(() => umi.rpc.getRent(space));
-  const collectionRent = needsCollection ? 3_500_000n : 0n;
-  return rent.basisPoints + collectionRent + 100_000n;
+}
+
+export async function estimateDeployCost(baseUmi: Umi, params: DeployCostParams): Promise<bigint> {
+  const umi = withCandyMachine(baseUmi);
+  const existing = params.existing ?? null;
+  const supply = existing ? existing.itemsAvailable : params.supply;
+  const candyMachineSigner = generateSigner(umi);
+  const candyMachine = existing ? publicKey(existing.candyMachineAddress) : candyMachineSigner.publicKey;
+  const chunks = configLineChunks(umi, candyMachine, existing ? existing.itemsLoaded : 0, supply);
+
+  let lamports = transactionFee(1n) * BigInt(chunks.length);
+  if (existing) return lamports;
+
+  const { prefixName, nameLength } = nameSettings(params.collectionName, supply);
+  const { uriLength } = uriSettings("", supply);
+  const builder = await create(umi, {
+    candyMachine: candyMachineSigner,
+    collection: generateSigner(umi).publicKey,
+    collectionUpdateAuthority: umi.identity,
+    itemsAvailable: supply,
+    authority: umi.identity.publicKey,
+    configLineSettings: some({ prefixName, nameLength, prefixUri: "", uriLength, isSequential: false }),
+    guards: {},
+    groups: guardGroupsFor(params.phases, {
+      creatorWallet: params.creatorWallet,
+      treasuryWallet: getSettlementAuthority(),
+      merkleRoot: merkleRootFor(params.allowlist),
+    }),
+  });
+  const machineAndGuardRent = await withRpcRetry(() => builder.getRentCreatedOnChain(umi));
+  const collectionPluginRent = await withRpcRetry(() =>
+    umi.rpc.getRent(COLLECTION_UPDATE_DELEGATE_PLUGIN_BYTES, { includesHeaderBytes: true })
+  );
+  lamports += machineAndGuardRent.basisPoints + collectionPluginRent.basisPoints + transactionFee(2n);
+
+  if (params.needsCollection) {
+    const collectionRent = await withRpcRetry(() => umi.rpc.getRent(CORE_COLLECTION_ACCOUNT_BYTES));
+    lamports += collectionRent.basisPoints + transactionFee(2n);
+  }
+  return lamports;
 }
 
 export async function readCandyMachineSupply(

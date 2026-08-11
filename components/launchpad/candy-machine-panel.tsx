@@ -152,13 +152,15 @@ function Inner({
     }
     setBusy(true);
     try {
-      const cost = machine
-        ? 0n
-        : await estimateDeployCost(umi, {
-            supply: targetSupply,
-            collectionName,
-            needsCollection: !collectionAddress,
-          });
+      const cost = await estimateDeployCost(umi, {
+        supply: targetSupply,
+        collectionName,
+        needsCollection: !collectionAddress,
+        creatorWallet,
+        phases: deserializePhases(phases),
+        allowlist,
+        existing: machine,
+      });
       setCostLamports(cost);
       setFlowOpen(true);
     } catch (e) {
