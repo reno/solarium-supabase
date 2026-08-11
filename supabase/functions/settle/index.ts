@@ -49,7 +49,7 @@ function getRpcUrl(): string {
 
 function getUmi(): { umi: Umi; rpcUrl: string } {
   const rpcUrl = getRpcUrl();
-  return { umi: createUmi(rpcUrl).use(mplCore()), rpcUrl };
+  return { umi: createUmi(rpcUrl, { commitment: "confirmed" }).use(mplCore()), rpcUrl };
 }
 
 function getSettlementSigner(umi: Umi) {
