@@ -18,7 +18,8 @@ export interface NftCardProps {
   selected?: boolean;
   lastSale?: string;
   onBuy?: () => void;
-  onSelect?: () => void;
+  onOpen?: () => void;
+  onToggleSelect?: () => void;
   style?: CSSProperties;
 }
 
@@ -34,7 +35,8 @@ export function NftCard({
   selected,
   lastSale,
   onBuy,
-  onSelect,
+  onOpen,
+  onToggleSelect,
   style,
 }: NftCardProps) {
   const [hover, setHover] = useState(false);
@@ -42,7 +44,7 @@ export function NftCard({
     <div
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      onClick={onSelect}
+      onClick={onOpen}
       style={{
         position: "relative",
         background: "var(--surface-card)",
@@ -61,6 +63,37 @@ export function NftCard({
             <RarityBadge rank={rank} total={total} />
           </div>
         ) : null}
+        {onToggleSelect && (
+          <button
+            type="button"
+            aria-label={selected ? `Remove ${name} from sweep` : `Add ${name} to sweep`}
+            aria-pressed={!!selected}
+            onClick={(e: MouseEvent) => {
+              e.stopPropagation();
+              onToggleSelect();
+            }}
+            style={{
+              position: "absolute",
+              top: "var(--space-6)",
+              right: "var(--space-6)",
+              width: 22,
+              height: 22,
+              padding: 0,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "var(--radius-xs)",
+              background: selected ? "var(--accent)" : "color-mix(in oklab, var(--surface-1) 80%, transparent)",
+              border: `1px solid ${selected ? "var(--accent)" : "var(--border-strong)"}`,
+              backdropFilter: "blur(6px)",
+              cursor: "pointer",
+              opacity: selected || hover ? 1 : 0.55,
+              transition: "opacity var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out)",
+            }}
+          >
+            {selected ? <Icon name="check" size={13} color="var(--text-on-accent)" /> : null}
+          </button>
+        )}
       </div>
       <div style={{ padding: "var(--space-5) var(--space-5) var(--space-6)", position: "relative" }}>
         {collection ? (

@@ -173,7 +173,8 @@ export function CollectionBrowser({
                     total={e.rarityTotal ?? undefined}
                     src={e.imageUrl}
                     selected={sweep.includes(e.id)}
-                    onSelect={buyable(e) ? () => toggleSweep(e.id) : () => router.push(`/nft/${e.id}`)}
+                    onOpen={() => router.push(`/nft/${e.id}`)}
+                    onToggleSelect={buyable(e) ? () => toggleSweep(e.id) : undefined}
                     onBuy={buyable(e) ? () => router.push(`/nft/${e.id}`) : undefined}
                   />
                 ))}
