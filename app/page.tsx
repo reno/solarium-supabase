@@ -129,7 +129,6 @@ export default async function Home() {
       };
     });
 
-  const seenCollections = new Set<string>();
   const featuredItems: FeaturedItem[] = (recentListingsRes.data ?? [])
     .filter((l) => activeListing([l as { status: string; expires_at?: string | null }]))
     .map((l) => {
@@ -139,12 +138,6 @@ export default async function Home() {
       return { nft, coll, price: row.price_lamports };
     })
     .filter((x) => x.nft && !isUnrevealed(x.coll?.reveal_at))
-    .filter(({ nft }) => {
-      const key = nft!.collection_id ?? `nft:${nft!.id}`;
-      if (seenCollections.has(key)) return false;
-      seenCollections.add(key);
-      return true;
-    })
     .slice(0, FEATURED_SLIDES)
     .map(({ nft, coll, price }) => {
       const a = nft!.collection_id ? agg.get(nft!.collection_id) : undefined;
