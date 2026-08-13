@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -7,6 +8,11 @@ import { CreatorSettings } from "@/components/creator/creator-settings";
 import { LaunchpadSetup, type SetupCollection } from "@/components/launchpad/launchpad-setup";
 import { lamportsToSol } from "@/lib/solana/lamports";
 import { createClient } from "@/lib/supabase/server";
+
+export const metadata: Metadata = {
+  title: "Creator studio",
+  robots: { index: false, follow: false },
+};
 
 const LABEL: React.CSSProperties = {
   font: "var(--type-label)",

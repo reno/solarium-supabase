@@ -1,12 +1,17 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 
 import { BackLink } from "@/components/back-link";
 import { ArtTile } from "@/components/design";
 import { Avatar } from "@/components/profile/avatar";
 import { EditableAvatar } from "@/components/profile/editable-avatar";
 import { FollowButton } from "@/components/social/follow-button";
+import { JsonLd } from "@/components/seo/json-ld";
 import { shortWallet } from "@/lib/format/wallet";
+import { profilePageJsonLd } from "@/lib/seo/json-ld";
+import { pageMetadata, truncate } from "@/lib/seo/metadata";
 import { createClient } from "@/lib/supabase/server";
 
 type ProfileSummary = {
@@ -32,6 +37,37 @@ function ProfileLink({ profile }: { profile: ProfileSummary }) {
   );
 }
 
+export const loadProfile = cache(async (username: string) => {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("id, username, bio, avatar_url, wallet_address")
+    .eq("username", username)
+    .maybeSingle();
+  return data;
+});
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ username: string }>;
+}): Promise<Metadata> {
+  const { username } = await params;
+  const profile = await loadProfile(username);
+  if (!profile) return { title: "Profile not found", robots: { index: false } };
+
+  const handle = profile.username ?? username;
+  return pageMetadata({
+    title: `@${handle}`,
+    description: profile.bio
+      ? truncate(profile.bio)
+      : `${handle}'s NFTs, collections and activity on Solarium.`,
+    path: `/u/${handle}`,
+    image: profile.avatar_url,
+    imageAlt: `@${handle}`,
+  });
+}
+
 export default async function ProfilePage({
   params,
 }: {
@@ -43,11 +79,7 @@ export default async function ProfilePage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, username, bio, avatar_url, wallet_address")
-    .eq("username", username)
-    .maybeSingle();
+  const profile = await loadProfile(username);
 
   if (!profile) notFound();
 
@@ -105,6 +137,14 @@ export default async function ProfilePage({
 
   return (
     <main style={{ maxWidth: "var(--page-max)", margin: "0 auto", width: "100%", flex: 1, padding: "var(--space-11) var(--page-gutter) var(--space-13)" }}>
+      <JsonLd
+        data={profilePageJsonLd({
+          username: profile.username ?? username,
+          bio: profile.bio,
+          path: `/u/${profile.username ?? username}`,
+          avatarUrl: profile.avatar_url,
+        })}
+      />
       <div style={{ marginBottom: "var(--space-8)" }}>
         <BackLink />
       </div>
@@ -160,7 +200,7 @@ export default async function ProfilePage({
             {nfts.map((nft) => (
               <Link key={nft.id} href={`/nft/${nft.id}`} style={{ display: "block", textDecoration: "none", background: "var(--surface-card)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-card)", overflow: "hidden" }}>
                 <div style={{ padding: "var(--space-4)", paddingBottom: 0 }}>
-                  <ArtTile src={nft.image_url} label={nft.name} />
+                  <ArtTile src={nft.image_url} label={nft.name} alt={nft.name} sizes="(max-width: 767px) 50vw, 240px" />
                 </div>
                 <div style={{ padding: "var(--space-5)" }}>
                   <p style={{ margin: 0, fontSize: "var(--text-md)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nft.name}</p>

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -12,6 +13,11 @@ import { mapCollectionOffers, mapOffers, type OfferEntry, type RawCollectionOffe
 import { getSolUsd } from "@/lib/price/sol";
 import { lamportsToSol } from "@/lib/solana/lamports";
 import { createClient } from "@/lib/supabase/server";
+
+export const metadata: Metadata = {
+  title: "Portfolio",
+  robots: { index: false, follow: false },
+};
 
 const LABEL: React.CSSProperties = {
   font: "var(--type-label)",

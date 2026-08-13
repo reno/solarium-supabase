@@ -55,7 +55,7 @@ export function ActivityRow({ kind = "sale", item, image, collection, price, cur
         <Icon name={k.icon} size={13} /> {k.label}
       </span>
       <span style={{ display: "flex", alignItems: "center", gap: "var(--space-5)", minWidth: 0 }}>
-        <ArtTile src={image} label="" style={{ width: 26, height: 26, flex: "0 0 auto" }} />
+        <ArtTile src={image} label="" alt="" sizes="26px" style={{ width: 26, height: 26, flex: "0 0 auto" }} />
         <span style={{ minWidth: 0 }}>
           <span style={{ display: "block", fontSize: "var(--text-md)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {item}

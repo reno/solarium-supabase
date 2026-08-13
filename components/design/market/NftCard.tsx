@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type CSSProperties, type MouseEvent } from "react";
 
 import { Icon } from "../core/Icon";
@@ -17,6 +18,7 @@ export interface NftCardProps {
   src?: string;
   selected?: boolean;
   lastSale?: string;
+  href?: string;
   onBuy?: () => void;
   onOpen?: () => void;
   onToggleSelect?: () => void;
@@ -34,6 +36,7 @@ export function NftCard({
   src,
   selected,
   lastSale,
+  href,
   onBuy,
   onOpen,
   onToggleSelect,
@@ -57,7 +60,7 @@ export function NftCard({
       }}
     >
       <div style={{ padding: "var(--space-4)", paddingBottom: 0, position: "relative" }}>
-        <ArtTile src={src} label={name || "nft art"} />
+        <ArtTile src={src} label={name || "nft art"} alt={name} sizes="(max-width: 767px) 50vw, 240px" />
         {rank != null ? (
           <div style={{ position: "absolute", top: "var(--space-6)", left: "var(--space-6)" }}>
             <RarityBadge rank={rank} total={total} />
@@ -102,7 +105,17 @@ export function NftCard({
           </div>
         ) : null}
         <div style={{ fontSize: "var(--text-md)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {name}
+          {href ? (
+            <Link
+              href={href}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
+              style={{ color: "inherit", textDecoration: "none" }}
+            >
+              {name}
+            </Link>
+          ) : (
+            name
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: "var(--space-4)" }}>
           <span style={{ fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums", fontSize: "var(--text-base)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>

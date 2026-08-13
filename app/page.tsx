@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ActivityRow, Button, Card } from "@/components/design";
@@ -6,8 +7,17 @@ import { TrendingTable, type TrendingEntry } from "@/components/home/trending-ta
 import { toFeedItem, type RawActivity } from "@/lib/activities/feed";
 import { activeListing, isUnrevealed } from "@/lib/listings/active";
 import { deltaBps, deltaLabel } from "@/lib/price/delta";
+import { JsonLd } from "@/components/seo/json-ld";
+import { websiteJsonLd } from "@/lib/seo/json-ld";
+import { pageMetadata } from "@/lib/seo/metadata";
+import { SITE_TAGLINE, SITE_TITLE } from "@/lib/seo/site";
 import { lamportsToSol } from "@/lib/solana/lamports";
 import { createClient } from "@/lib/supabase/server";
+
+export const metadata: Metadata = {
+  ...pageMetadata({ title: SITE_TITLE, description: SITE_TAGLINE, path: "/" }),
+  title: { absolute: SITE_TITLE },
+};
 
 type CollectionRow = {
   id: string;
@@ -163,6 +173,9 @@ export default async function Home() {
 
   return (
     <main style={{ maxWidth: "var(--page-max)", margin: "0 auto", width: "100%", flex: 1, padding: "var(--space-11) var(--page-gutter) var(--space-13)" }}>
+      {websiteJsonLd().map((data, i) => (
+        <JsonLd key={i} data={data} />
+      ))}
       <div className="sol-split" style={{ display: "grid", gridTemplateColumns: "1.75fr 1fr", gap: "var(--space-9)", marginBottom: "var(--space-11)", alignItems: "start" }}>
         <div>
           <h1 style={{ font: "var(--type-display)", letterSpacing: "var(--tracking-display)", color: "var(--text-primary)", margin: 0, maxWidth: 800 }}>
@@ -196,7 +209,7 @@ export default async function Home() {
         <TrendingTable rows={trending} />
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-5)", marginBottom: "var(--space-7)", height: 30 }}>
-            <span style={{ font: "var(--type-label)", fontSize: "var(--text-md)", color: "var(--text-primary)" }}>Live activity</span>
+            <h2 style={{ font: "var(--type-label)", fontSize: "var(--text-md)", color: "var(--text-primary)", margin: 0 }}>Live activity</h2>
             <span style={{ width: 6, height: 6, borderRadius: 999, background: "var(--live)", boxShadow: "var(--glow-live)" }} />
           </div>
           <Card padding={0}>

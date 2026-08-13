@@ -80,7 +80,7 @@ export function MyNftCard({
     >
       <Link href={href ?? `/nft/${nft.id}`} style={{ display: "block", textDecoration: "none" }}>
         <div style={{ padding: "var(--space-4)", paddingBottom: 0 }}>
-          <ArtTile src={nft.imageUrl} label={nft.name} />
+          <ArtTile src={nft.imageUrl} label={nft.name} alt={nft.name} sizes="(max-width: 767px) 50vw, 240px" />
         </div>
         <div style={{ padding: "var(--space-5) var(--space-5) 0" }}>
           <div

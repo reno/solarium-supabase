@@ -2,7 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { SITE_NAME, SITE_TAGLINE, SITE_TITLE, siteUrl } from "@/lib/seo/site";
 import { ToastProvider } from "@/components/toast/toast-provider";
 import { Providers } from "./providers";
 
@@ -27,8 +29,24 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Solarium",
-  description: "Mint, collect and trade Solana NFTs.",
+  metadataBase: new URL(siteUrl()),
+  title: {
+    default: SITE_TITLE,
+    template: `%s · ${SITE_NAME}`,
+  },
+  description: SITE_TAGLINE,
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    locale: "en_US",
+    title: SITE_TITLE,
+    description: SITE_TAGLINE,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_TAGLINE,
+  },
 };
 
 export const viewport: Viewport = {
@@ -57,6 +75,7 @@ export default function RootLayout({
           <ToastProvider>
             <SiteHeader />
             {children}
+            <SiteFooter />
           </ToastProvider>
         </Providers>
       </body>
