@@ -30,7 +30,6 @@ export function FeaturedCarousel({ items }: { items: FeaturedItem[] }) {
   if (count === 0) return null;
   const position = index % count;
   const item = items[position];
-  const availability = item.totalCount > 0 ? (item.listedCount / item.totalCount) * 100 : 0;
 
   return (
     <Card padding="var(--space-6)">
@@ -56,7 +55,7 @@ export function FeaturedCarousel({ items }: { items: FeaturedItem[] }) {
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginTop: "var(--space-6)", gap: "var(--space-5)" }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: "var(--text-lg)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {item.collectionName}
+            {item.itemName}
           </div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {item.priceSol} SOL · {item.listedCount} / {item.totalCount} listed
@@ -65,20 +64,6 @@ export function FeaturedCarousel({ items }: { items: FeaturedItem[] }) {
         <Link href={`/nft/${item.nftId}`} style={{ textDecoration: "none", flex: "0 0 auto" }}>
           <Button variant="primary" size="sm">Buy</Button>
         </Link>
-      </div>
-
-      <div
-        title={`${item.listedCount} of ${item.totalCount} items listed`}
-        style={{ height: 4, background: "var(--surface-3)", borderRadius: 999, marginTop: "var(--space-6)", overflow: "hidden" }}
-      >
-        <div
-          style={{
-            width: `${availability}%`,
-            height: "100%",
-            background: "var(--accent)",
-            transition: "width var(--dur-base) var(--ease-out)",
-          }}
-        />
       </div>
     </Card>
   );

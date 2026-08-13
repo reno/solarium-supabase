@@ -6,6 +6,16 @@ import { useMemo, useState } from "react";
 import { Card, Select, Tabs, TrendingRow } from "@/components/design";
 
 const COLS = "34px 1fr 96px 74px 104px 74px 78px 92px";
+const HEADERS: Array<[string, boolean]> = [
+  ["#", false],
+  ["Collection", false],
+  ["Floor", false],
+  ["24h", false],
+  ["Volume", true],
+  ["Listed", true],
+  ["Owners", true],
+  ["Trend", true],
+];
 
 export type TrendingEntry = {
   collectionId: string;
@@ -47,17 +57,19 @@ export function TrendingTable({ rows }: { rows: TrendingEntry[] }) {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: "var(--space-7)" }}>
+      <div className="sol-wrap" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "var(--space-5)", marginBottom: "var(--space-7)" }}>
         <Tabs tabs={["Trending", "Top", "New"]} value={tab} onChange={setTab} size="sm" style={{ border: "none" }} />
         <div style={{ display: "flex", gap: "var(--space-4)" }}>
           <Select size="sm" options={[...RANGES]} value={range} onChange={(e) => setRange(e.target.value as Range)} />
-          <Select size="sm" options={["All chains · Solana"]} />
+          <span className="sol-hide-sm">
+            <Select size="sm" options={["All chains · Solana"]} />
+          </span>
         </div>
       </div>
       <Card padding={0}>
-        <div style={{ display: "grid", gridTemplateColumns: COLS, gap: "var(--space-6)", padding: "var(--space-6) var(--space-7)", borderBottom: "1px solid var(--border-subtle)" }}>
-          {["#", "Collection", "Floor", "24h", "Volume", "Listed", "Owners", "Trend"].map((h) => (
-            <span key={h} className="sol-label" style={{ fontSize: "var(--text-2xs)" }}>{h}</span>
+        <div className="sol-row sol-row-trending" style={{ display: "grid", gridTemplateColumns: COLS, gap: "var(--space-6)", padding: "var(--space-6) var(--space-7)", borderBottom: "1px solid var(--border-subtle)" }}>
+          {HEADERS.map(([h, hideSm]) => (
+            <span key={h} className={hideSm ? "sol-label sol-hide-sm" : "sol-label"} style={{ fontSize: "var(--text-2xs)" }}>{h}</span>
           ))}
         </div>
         {sorted.map((r, i) => (

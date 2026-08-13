@@ -149,7 +149,7 @@ export default async function LaunchpadIndexPage() {
               live.length === 0 ? (
                 <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>No live mints.</p>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "var(--grid-gap)" }}>
+                <div className="sol-cards-wide" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "var(--grid-gap)" }}>
                   {live.map(renderCard)}
                 </div>
               ),
@@ -157,7 +157,7 @@ export default async function LaunchpadIndexPage() {
               upcoming.length === 0 ? (
                 <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>No upcoming mints.</p>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "var(--grid-gap)" }}>
+                <div className="sol-cards-wide" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "var(--grid-gap)" }}>
                   {upcoming.map(renderCard)}
                 </div>
               ),
@@ -165,7 +165,7 @@ export default async function LaunchpadIndexPage() {
               ended.length === 0 ? (
                 <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>No ended mints.</p>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "var(--grid-gap)" }}>
+                <div className="sol-cards-wide" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "var(--grid-gap)" }}>
                   {ended.map(renderCard)}
                 </div>
               ),

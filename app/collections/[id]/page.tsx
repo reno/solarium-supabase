@@ -207,7 +207,7 @@ export default async function CollectionDetailPage({
   return (
     <main style={{ width: "100%", flex: 1 }}>
       <div style={{ position: "relative" }}>
-        <ArtTile src={bannerUrl} label="collection banner · 6:1" ratio="6 / 1" radius="0" style={{ border: "none" }} />
+        <ArtTile src={bannerUrl} label="collection banner · 6:1" ratio="6 / 1" radius="0" className="sol-banner" style={{ border: "none" }} />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, var(--bg-page), transparent 70%)" }} />
       </div>
 
@@ -216,7 +216,7 @@ export default async function CollectionDetailPage({
           <BackLink />
         </div>
 
-        <div style={{ display: "flex", alignItems: "flex-end", gap: "var(--space-8)", marginTop: "var(--space-6)" }}>
+        <div className="sol-wrap" style={{ display: "flex", alignItems: "flex-end", gap: "var(--space-8)", marginTop: "var(--space-6)" }}>
           <ArtTile src={collection.cover_url ?? undefined} label="" style={{ width: 92, height: 92, flex: "0 0 auto", border: "2px solid var(--bg-page)", borderRadius: "var(--radius-card)" }} />
           <div style={{ flex: 1, paddingBottom: "var(--space-4)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-5)" }}>
@@ -233,7 +233,7 @@ export default async function CollectionDetailPage({
               )}
             </p>
           </div>
-          <div style={{ display: "flex", gap: "var(--space-4)", paddingBottom: "var(--space-4)", flex: "0 0 auto" }}>
+          <div className="sol-full-sm sol-wrap" style={{ display: "flex", gap: "var(--space-4)", paddingBottom: "var(--space-4)", flex: "0 0 auto" }}>
             {unminted > 0 && (
               <Link href={`/launchpad/${id}`} style={{ textDecoration: "none" }}>
                 <Button variant="primary" icon="sparkle">Mint an item</Button>

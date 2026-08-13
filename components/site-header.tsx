@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { MobileNav } from "@/components/mobile-nav";
 import { GlobalSearch } from "@/components/search/global-search";
 import { SiteNav } from "@/components/site-nav";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
@@ -33,13 +34,20 @@ export async function SiteHeader() {
   }
 
   const links = [
-    { href: "/", label: "Explore" },
-    { href: "/launchpad", label: "Launchpad" },
-    ...(menuUser ? [{ href: "/portfolio", label: "Portfolio" }, { href: "/creator", label: "Creator" }] : []),
+    { href: "/", label: "Explore", icon: "compass" },
+    { href: "/launchpad", label: "Launchpad", icon: "rocket" },
+    ...(menuUser
+      ? [
+          { href: "/portfolio", label: "Portfolio", icon: "briefcase" },
+          { href: "/creator", label: "Creator", icon: "palette" },
+        ]
+      : []),
   ];
 
   return (
+    <>
     <header
+      className="sol-header"
       style={{
         position: "sticky",
         top: 0,
@@ -74,6 +82,7 @@ export async function SiteHeader() {
           style={{ display: "block" }}
         />
         <span
+          className="sol-hide-sm"
           style={{
             font: "var(--weight-bold) 16px/1 var(--font-sans)",
             letterSpacing: "0.08em",
@@ -83,11 +92,12 @@ export async function SiteHeader() {
           SOLARIUM
         </span>
       </Link>
-      <SiteNav links={links} />
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-6)", marginLeft: "auto" }}>
+      <SiteNav links={links} className="sol-hide-sm" />
+      <div className="sol-header-actions" style={{ display: "flex", alignItems: "center", gap: "var(--space-6)", marginLeft: "auto" }}>
         <GlobalSearch />
         <div
           title="SOL / USD"
+          className="sol-hide-sm"
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -117,5 +127,7 @@ export async function SiteHeader() {
         <WalletMenu user={menuUser} solUsd={solUsd} />
       </div>
     </header>
+    <MobileNav links={links} />
+    </>
   );
 }

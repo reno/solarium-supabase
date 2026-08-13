@@ -14,7 +14,7 @@ export type Holding = {
 
 export function PortfolioHoldings({ holdings, userId }: { holdings: Holding[]; userId: string }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "var(--grid-gap)" }}>
+    <div className="sol-cards" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "var(--grid-gap)" }}>
       {holdings.map((h) => (
         <MyNftCard
           key={h.id}

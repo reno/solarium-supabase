@@ -129,6 +129,7 @@
 
   --rail-w: 248px;
   --nav-h: 56px;
+  --mobile-nav-h: 56px;
   --subnav-h: 44px;
   --page-max: 1600px;
   --page-gutter: var(--space-9);

@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./design-tokens.css";
+@import "./responsive.css";
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 

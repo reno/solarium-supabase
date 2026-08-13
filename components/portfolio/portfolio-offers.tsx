@@ -41,16 +41,18 @@ export function PortfolioOffers({ offers, bidderId }: { offers: PortfolioOffer[]
 
   return (
     <Card padding={0}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 110px 90px", gap: "var(--space-6)", padding: "var(--space-6) var(--space-7)", borderBottom: "1px solid var(--border-subtle)" }}>
-        {["Item", "Your offer", "Expires", ""].map((h, i) => <span key={i} style={LABEL}>{h}</span>)}
+      <div className="sol-row sol-row-my-offers" style={{ display: "grid", gridTemplateColumns: "1fr 120px 110px 90px", gap: "var(--space-6)", padding: "var(--space-6) var(--space-7)", borderBottom: "1px solid var(--border-subtle)" }}>
+        {["Item", "Your offer", "Expires", ""].map((h, i) => (
+          <span key={i} className={i === 2 ? "sol-hide-sm" : undefined} style={LABEL}>{h}</span>
+        ))}
       </div>
       {offers.map((o, i) => {
         const busy = busyId === o.id;
         return (
-          <div key={o.id} style={{ display: "grid", gridTemplateColumns: "1fr 120px 110px 90px", gap: "var(--space-6)", alignItems: "center", height: 48, padding: "0 var(--space-7)", borderBottom: i === offers.length - 1 ? "none" : "1px solid var(--border-subtle)" }}>
+          <div key={o.id} className="sol-row sol-row-my-offers" style={{ display: "grid", gridTemplateColumns: "1fr 120px 110px 90px", gap: "var(--space-6)", alignItems: "center", height: 48, padding: "0 var(--space-7)", borderBottom: i === offers.length - 1 ? "none" : "1px solid var(--border-subtle)" }}>
             <span style={{ fontSize: "var(--text-md)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.item}</span>
             <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: "var(--accent-2)" }}>{o.offerSol} SOL</span>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>{o.expiresLabel}</span>
+            <span className="sol-hide-sm" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>{o.expiresLabel}</span>
             <button
               type="button"
               disabled={busy}

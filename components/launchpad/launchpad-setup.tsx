@@ -131,7 +131,7 @@ export function LaunchpadSetup({
         />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-6)" }}>
+      <div className="sol-cols-1-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-6)" }}>
         <div>
           <label style={FIELD_LABEL}>Phase name</label>
           <Input placeholder="Public" value={name} onChange={(e) => setName(e.target.value)} />

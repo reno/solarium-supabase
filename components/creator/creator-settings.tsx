@@ -53,7 +53,7 @@ export function CreatorSettings({ collections, royaltiesEarnedSol }: { collectio
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-6)" }}>
+    <div className="sol-cols-1-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-6)" }}>
       <Card padding="var(--space-8)" header="Royalties earned">
         <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xl)", color: "var(--text-primary)" }}>
           {royaltiesEarnedSol}

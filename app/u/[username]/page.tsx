@@ -156,7 +156,7 @@ export default async function ProfilePage({
         {nfts.length === 0 ? (
           <p style={{ margin: 0, padding: "var(--space-8)", borderRadius: "var(--radius-card)", border: "1px solid var(--border-subtle)", background: "var(--surface-card)", fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>Nothing owned yet.</p>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "var(--grid-gap)" }}>
+          <div className="sol-cards" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "var(--grid-gap)" }}>
             {nfts.map((nft) => (
               <Link key={nft.id} href={`/nft/${nft.id}`} style={{ display: "block", textDecoration: "none", background: "var(--surface-card)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-card)", overflow: "hidden" }}>
                 <div style={{ padding: "var(--space-4)", paddingBottom: 0 }}>

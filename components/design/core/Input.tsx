@@ -22,6 +22,7 @@ export function Input({ icon, suffix, size = "md", numeric, invalid, style, cont
         display: "flex",
         alignItems: "center",
         gap: "var(--space-3)",
+        minWidth: 0,
         height: h,
         padding: "0 var(--space-5)",
         background: "var(--surface-inset)",

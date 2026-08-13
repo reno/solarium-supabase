@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
-import { Icon } from "@/components/design";
+import { Icon, IconButton } from "@/components/design";
 import { createClient } from "@/lib/supabase/client";
 
 type SearchResult = {
@@ -22,6 +23,7 @@ function searchTerm(raw: string): string {
 
 export function GlobalSearch() {
   const [isOpen, setIsOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -134,157 +136,185 @@ export function GlobalSearch() {
     };
   }, [query]);
 
+  const dismiss = () => {
+    setIsOpen(false);
+    setMobileOpen(false);
+    setQuery("");
+  };
+
+  const inputStyle = {
+    width: "100%",
+    height: "var(--control-h-md)",
+    paddingLeft: "var(--space-10)",
+    paddingRight: "var(--space-5)",
+    background: "var(--surface-2)",
+    border: "1px solid var(--border-default)",
+    borderRadius: "var(--radius-control)",
+    fontFamily: "var(--font-sans)",
+    fontSize: "var(--text-sm)",
+    color: "var(--text-primary)",
+    outline: "none",
+  } as const;
+
+  const emptyStyle = {
+    padding: "var(--space-7)",
+    textAlign: "center",
+    color: "var(--text-tertiary)",
+    fontSize: "var(--text-sm)",
+  } as const;
+
+  const resultList = loading ? (
+    <div style={emptyStyle}>Searching...</div>
+  ) : results.length === 0 ? (
+    <div style={emptyStyle}>No results found</div>
+  ) : (
+    <ul style={{ listStyle: "none", margin: 0, padding: "var(--space-3)" }}>
+      {results.map((result) => (
+        <li key={`${result.type}-${result.id}`}>
+          <Link
+            href={result.href}
+            onClick={dismiss}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-5)",
+              padding: "var(--space-5)",
+              borderRadius: "var(--radius-sm)",
+              textDecoration: "none",
+              transition: "background 0.15s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "var(--surface-hover)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <Icon
+              name={result.type === "collection" ? "layers" : result.type === "nft" ? "image" : "user"}
+              size={16}
+              color="var(--text-tertiary)"
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "var(--text-md)",
+                  fontWeight: "var(--weight-medium)",
+                  color: "var(--text-primary)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {result.name}
+              </div>
+              {result.subtitle && (
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)", marginTop: 2 }}>
+                  {result.subtitle}
+                </div>
+              )}
+            </div>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+
   return (
-    <div ref={containerRef} style={{ position: "relative" }}>
-      <div
-        style={{
-          position: "relative",
-          display: "flex",
-          alignItems: "center",
-        }}
-      >
-        <Icon
-          name="search"
-          size={14}
-          style={{
-            position: "absolute",
-            left: "var(--space-5)",
-            color: "var(--text-tertiary)",
-            pointerEvents: "none",
-          }}
-        />
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder="Search..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => setIsOpen(true)}
-          style={{
-            width: 240,
-            height: "var(--control-h-md)",
-            paddingLeft: "var(--space-9)",
-            paddingRight: "var(--space-5)",
-            background: "var(--surface-2)",
-            border: "1px solid var(--border-default)",
-            borderRadius: "var(--radius-control)",
-            fontFamily: "var(--font-sans)",
-            fontSize: "var(--text-sm)",
-            color: "var(--text-primary)",
-            outline: "none",
-          }}
-        />
+    <>
+      <div ref={containerRef} className="sol-hide-sm" style={{ position: "relative" }}>
+        <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+          <Icon
+            name="search"
+            size={14}
+            style={{ position: "absolute", left: "var(--space-5)", color: "var(--text-tertiary)", pointerEvents: "none" }}
+          />
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Search..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => setIsOpen(true)}
+            style={{ ...inputStyle, width: 240 }}
+          />
+        </div>
+
+        {isOpen && (query.trim() || loading) && (
+          <div
+            style={{
+              position: "absolute",
+              top: "calc(100% + 6px)",
+              left: 0,
+              right: 0,
+              zIndex: 100,
+              background: "var(--surface-overlay)",
+              border: "1px solid var(--border-default)",
+              borderRadius: "var(--radius-card)",
+              boxShadow: "var(--shadow-overlay)",
+              maxHeight: 400,
+              overflowY: "auto",
+            }}
+          >
+            {resultList}
+          </div>
+        )}
       </div>
 
-      {isOpen && (query.trim() || loading) && (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 6px)",
-            left: 0,
-            right: 0,
-            zIndex: 100,
-            background: "var(--surface-overlay)",
-            border: "1px solid var(--border-default)",
-            borderRadius: "var(--radius-card)",
-            boxShadow: "var(--shadow-overlay)",
-            maxHeight: 400,
-            overflowY: "auto",
-          }}
-        >
-          {loading ? (
+      <IconButton className="sol-only-sm" icon="search" label="Search" onClick={() => setMobileOpen(true)} />
+
+      {mobileOpen && typeof document !== "undefined"
+        ? createPortal(
             <div
               style={{
-                padding: "var(--space-7)",
-                textAlign: "center",
-                color: "var(--text-tertiary)",
-                fontSize: "var(--text-sm)",
+                position: "fixed",
+                inset: 0,
+                zIndex: 120,
+                display: "flex",
+                flexDirection: "column",
+                background: "var(--bg-page)",
               }}
             >
-              Searching...
-            </div>
-          ) : results.length === 0 ? (
-            <div
-              style={{
-                padding: "var(--space-7)",
-                textAlign: "center",
-                color: "var(--text-tertiary)",
-                fontSize: "var(--text-sm)",
-              }}
-            >
-              No results found
-            </div>
-          ) : (
-            <ul style={{ listStyle: "none", margin: 0, padding: "var(--space-3)" }}>
-              {results.map((result) => (
-                <li key={`${result.type}-${result.id}`}>
-                  <Link
-                    href={result.href}
-                    onClick={() => {
-                      setIsOpen(false);
-                      setQuery("");
-                    }}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "var(--space-5)",
-                      padding: "var(--space-5)",
-                      borderRadius: "var(--radius-sm)",
-                      textDecoration: "none",
-                      transition: "background 0.15s ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "var(--surface-hover)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "transparent";
-                    }}
-                  >
-                    <Icon
-                      name={
-                        result.type === "collection"
-                          ? "layers"
-                          : result.type === "nft"
-                            ? "image"
-                            : "user"
-                      }
-                      size={16}
-                      color="var(--text-tertiary)"
-                    />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontFamily: "var(--font-sans)",
-                          fontSize: "var(--text-md)",
-                          fontWeight: "var(--weight-medium)",
-                          color: "var(--text-primary)",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {result.name}
-                      </div>
-                      {result.subtitle && (
-                        <div
-                          style={{
-                            fontFamily: "var(--font-mono)",
-                            fontSize: "var(--text-xs)",
-                            color: "var(--text-tertiary)",
-                            marginTop: 2,
-                          }}
-                        >
-                          {result.subtitle}
-                        </div>
-                      )}
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-    </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--space-5)",
+                  padding: "var(--space-6) var(--page-gutter)",
+                  borderBottom: "1px solid var(--border-subtle)",
+                }}
+              >
+                <div style={{ position: "relative", display: "flex", alignItems: "center", flex: 1, minWidth: 0 }}>
+                  <Icon
+                    name="search"
+                    size={14}
+                    style={{ position: "absolute", left: "var(--space-5)", color: "var(--text-tertiary)", pointerEvents: "none" }}
+                  />
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Search collections, items, people"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+                <IconButton icon="x" label="Close search" onClick={dismiss} />
+              </div>
+              <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+                {query.trim() || loading ? (
+                  resultList
+                ) : (
+                  <p style={{ margin: 0, padding: "var(--space-9)", textAlign: "center", fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>
+                    Search collections, items and people.
+                  </p>
+                )}
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+    </>
   );
 }

@@ -210,7 +210,7 @@ export default async function LaunchpadDetailPage({
   return (
     <main style={{ width: "100%", flex: 1 }}>
       <div style={{ position: "relative" }}>
-        <ArtTile src={collection.cover_url ?? undefined} label="launch banner · 6:1" ratio="6 / 1" radius="0" style={{ border: "none" }} />
+        <ArtTile src={collection.cover_url ?? undefined} label="launch banner · 6:1" ratio="6 / 1" radius="0" className="sol-banner" style={{ border: "none" }} />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, var(--bg-page), transparent 65%)" }} />
       </div>
 
@@ -219,7 +219,7 @@ export default async function LaunchpadDetailPage({
           <BackLink />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: "var(--space-10)", marginTop: "var(--space-6)", alignItems: "start" }}>
+        <div className="sol-split" style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: "var(--space-10)", marginTop: "var(--space-6)", alignItems: "start" }}>
           <div>
             <ArtTile src={collection.cover_url ?? undefined} label="mint preview · 1:1" radius="var(--radius-card)" style={{ maxWidth: 520 }} />
             <div style={{ marginTop: "var(--space-9)", maxWidth: 620 }}>
@@ -432,7 +432,7 @@ export default async function LaunchpadDetailPage({
                 ? "Your phases are enforced on chain by candy guards. Edit them below, then sync so the chain follows — until you do, the guards keep enforcing what you last deployed."
                 : "Deploy a candy machine to open this drop. Your phases become candy guards, and buyers mint straight from the chain — nothing is minted until they do."}
             </p>
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.3fr) minmax(0, 1fr)", gap: "var(--space-10)", alignItems: "start" }}>
+            <div className="sol-split" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.3fr) minmax(0, 1fr)", gap: "var(--space-10)", alignItems: "start" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-9)" }}>
                 <CandyMachinePanel
                   collectionId={id}
