@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 
 import { BackLink } from "@/components/back-link";
 import { FloorChartCard } from "@/components/charts/floor-chart-card";
@@ -9,6 +11,9 @@ import { CollectionOfferButton } from "@/components/offers/collection-offer-butt
 import { toFeedItem, type RawActivity } from "@/lib/activities/feed";
 import { shortWallet } from "@/lib/format/wallet";
 import { getSolUsd } from "@/lib/price/sol";
+import { JsonLd } from "@/components/seo/json-ld";
+import { breadcrumbJsonLd, collectionPageJsonLd } from "@/lib/seo/json-ld";
+import { pageMetadata, truncate } from "@/lib/seo/metadata";
 import { lamportsToSol } from "@/lib/solana/lamports";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,6 +29,38 @@ type NftRow = {
   listings: { id: string; price_lamports: string | number; status: string }[] | null;
 };
 
+export const loadCollection = cache(async (id: string) => {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("collections")
+    .select(
+      "id, name, description, cover_url, banner_url, verified, royalty_bps, creator:profiles!collections_creator_id_fkey(username, wallet_address)"
+    )
+    .eq("id", id)
+    .maybeSingle();
+  return data;
+});
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const collection = await loadCollection(id);
+  if (!collection) return { title: "Collection not found", robots: { index: false } };
+
+  return pageMetadata({
+    title: collection.name,
+    description: collection.description
+      ? truncate(collection.description)
+      : `${collection.name} — floor, listings and activity on Solarium.`,
+    path: `/collections/${id}`,
+    image: collection.banner_url ?? collection.cover_url,
+    imageAlt: `${collection.name} artwork`,
+  });
+}
+
 export default async function CollectionDetailPage({
   params,
 }: {
@@ -35,13 +72,7 @@ export default async function CollectionDetailPage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: collection } = await supabase
-    .from("collections")
-    .select(
-      "id, name, description, cover_url, banner_url, verified, royalty_bps, creator:profiles!collections_creator_id_fkey(username, wallet_address)"
-    )
-    .eq("id", id)
-    .maybeSingle();
+  const collection = await loadCollection(id);
   if (!collection) notFound();
 
   const bannerUrl = collection.banner_url ?? collection.cover_url ?? undefined;
@@ -206,18 +237,43 @@ export default async function CollectionDetailPage({
 
   return (
     <main style={{ width: "100%", flex: 1 }}>
+      <JsonLd
+        data={collectionPageJsonLd({
+          name: collection.name,
+          description: collection.description,
+          path: `/collections/${collection.id}`,
+          image: bannerUrl,
+          items: items.slice(0, 20).map((item) => ({ name: item.name, path: `/nft/${item.id}` })),
+        })}
+      />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: "Collections", path: "/collections" },
+          { name: collection.name, path: `/collections/${collection.id}` },
+        ])}
+      />
       <div style={{ position: "relative" }}>
-        <ArtTile src={bannerUrl} label="collection banner · 6:1" ratio="6 / 1" radius="0" className="sol-banner" style={{ border: "none" }} />
+        <ArtTile
+          src={bannerUrl}
+          label="collection banner · 6:1"
+          alt={`${collection.name} banner`}
+          ratio="6 / 1"
+          radius="0"
+          className="sol-banner"
+          sizes="100vw"
+          priority
+          style={{ border: "none" }}
+        />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, var(--bg-page), transparent 70%)" }} />
       </div>
 
       <div style={{ maxWidth: "var(--page-max)", margin: "0 auto", padding: "0 var(--page-gutter) var(--space-13)" }}>
         <div style={{ marginTop: "var(--space-6)" }}>
-          <BackLink />
+          <BackLink label="Collections" href="/collections" />
         </div>
 
         <div className="sol-wrap" style={{ display: "flex", alignItems: "flex-end", gap: "var(--space-8)", marginTop: "var(--space-6)" }}>
-          <ArtTile src={collection.cover_url ?? undefined} label="" style={{ width: 92, height: 92, flex: "0 0 auto", border: "2px solid var(--bg-page)", borderRadius: "var(--radius-card)" }} />
+          <ArtTile src={collection.cover_url ?? undefined} label="" alt="" sizes="92px" style={{ width: 92, height: 92, flex: "0 0 auto", border: "2px solid var(--bg-page)", borderRadius: "var(--radius-card)" }} />
           <div style={{ flex: 1, paddingBottom: "var(--space-4)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-5)" }}>
               <h1 style={{ font: "var(--type-h1)", letterSpacing: "var(--tracking-heading)", color: "var(--text-primary)", margin: 0 }}>{collection.name}</h1>

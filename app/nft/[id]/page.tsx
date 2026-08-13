@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 
 import { BackLink } from "@/components/back-link";
 import { FloorChartCard } from "@/components/charts/floor-chart-card";
@@ -20,6 +22,9 @@ import { shortWallet } from "@/lib/format/wallet";
 import { explorerAddressUrl, getCluster } from "@/lib/solana/config";
 import { lamportsToSol } from "@/lib/solana/lamports";
 import { FEE_LABEL, feeOf } from "@/supabase/functions/_shared/fee";
+import { JsonLd } from "@/components/seo/json-ld";
+import { breadcrumbJsonLd, productJsonLd } from "@/lib/seo/json-ld";
+import { pageMetadata, truncate } from "@/lib/seo/metadata";
 import { createClient } from "@/lib/supabase/server";
 
 const LABEL: React.CSSProperties = {
@@ -29,6 +34,53 @@ const LABEL: React.CSSProperties = {
   letterSpacing: "var(--tracking-label)",
   color: "var(--text-tertiary)",
 };
+
+export const loadNft = cache(async (id: string) => {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("nfts")
+    .select(
+      "id, name, description, image_url, asset_address, item_number, collection_id, owner_id, rarity_rank, rarity_total, traits, collections(name, cover_url, collection_address, royalty_bps, reveal_at, creator_id), creator:profiles!nfts_creator_id_fkey(username, wallet_address), owner:profiles!nfts_owner_id_fkey(username, wallet_address), listings(id, price_lamports, status, seller_id, expires_at)"
+    )
+    .eq("id", id)
+    .maybeSingle();
+  return data;
+});
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const row = await loadNft(id);
+  if (!row) return { title: "Item not found", robots: { index: false } };
+
+  const collection = Array.isArray(row.collections) ? row.collections[0] : row.collections;
+  const unrevealed = isUnrevealed(collection?.reveal_at);
+  const listing = findActiveListing(row.listings ?? []);
+  const title = collection?.name ? `${row.name} — ${collection.name}` : row.name;
+
+  const facts = [
+    row.item_number != null && collection?.name
+      ? `Item #${row.item_number} of ${collection.name}`
+      : collection?.name
+        ? `Part of ${collection.name}`
+        : null,
+    !unrevealed && row.rarity_rank != null
+      ? `rarity rank ${row.rarity_rank}${row.rarity_total ? `/${row.rarity_total}` : ""}`
+      : null,
+    listing ? `listed for ${lamportsToSol(BigInt(String(listing.price_lamports)))} SOL` : "not listed",
+  ].filter(Boolean);
+
+  return pageMetadata({
+    title,
+    description: row.description ? truncate(row.description) : facts.join(" · "),
+    path: `/nft/${id}`,
+    image: unrevealed ? collection?.cover_url : row.image_url,
+    imageAlt: unrevealed ? `${collection?.name ?? "Collection"} cover art` : row.name,
+  });
+}
 
 export default async function NftDetailPage({
   params,
@@ -41,13 +93,7 @@ export default async function NftDetailPage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: row } = await supabase
-    .from("nfts")
-    .select(
-      "id, name, description, image_url, asset_address, item_number, collection_id, owner_id, rarity_rank, rarity_total, traits, collections(name, collection_address, royalty_bps, reveal_at, creator_id), creator:profiles!nfts_creator_id_fkey(username, wallet_address), owner:profiles!nfts_owner_id_fkey(username, wallet_address), listings(id, price_lamports, status, seller_id, expires_at)"
-    )
-    .eq("id", id)
-    .maybeSingle();
+  const row = await loadNft(id);
 
   if (!row) notFound();
 
@@ -165,13 +211,40 @@ export default async function NftDetailPage({
 
   return (
     <main style={{ maxWidth: "var(--page-max)", margin: "0 auto", width: "100%", flex: 1, padding: "var(--space-8) var(--page-gutter) var(--space-13)" }}>
+      <JsonLd
+        data={productJsonLd({
+          name: row.name,
+          description: row.description,
+          path: `/nft/${row.id}`,
+          image: unrevealed ? collection?.cover_url : row.image_url,
+          collectionName: collection?.name,
+          collectionPath: row.collection_id ? `/collections/${row.collection_id}` : null,
+          traits: unrevealed ? [] : traits,
+        })}
+      />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: "Collections", path: "/collections" },
+          ...(collection?.name && row.collection_id
+            ? [{ name: collection.name, path: `/collections/${row.collection_id}` }]
+            : []),
+          { name: row.name, path: `/nft/${row.id}` },
+        ])}
+      />
       <div style={{ marginBottom: "var(--space-8)" }}>
-        <BackLink label={collection?.name ?? "Back"} />
+        <BackLink label={collection?.name ?? "Back"} href={row.collection_id ? `/collections/${row.collection_id}` : undefined} />
       </div>
 
         <div className="sol-split" style={{ display: "grid", gridTemplateColumns: "minmax(340px, 1fr) 1.2fr", gap: "var(--space-10)", alignItems: "start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>
-            <ArtTile src={unrevealed ? undefined : row.image_url} label={unrevealed ? "unrevealed" : row.name} radius="var(--radius-card)">
+            <ArtTile
+              src={unrevealed ? undefined : row.image_url}
+              label={unrevealed ? "unrevealed" : row.name}
+              alt={row.name}
+              radius="var(--radius-card)"
+              sizes="(max-width: 1023px) 100vw, 520px"
+              priority
+            >
               {unrevealed && collection?.reveal_at ? (
                 <div style={{ position: "absolute", bottom: "var(--space-6)", left: 0, right: 0, textAlign: "center", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-secondary)" }}>
                   reveal in <Countdown target={collection.reveal_at} now={now} style={{ color: "var(--accent)" }} />

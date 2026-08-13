@@ -277,9 +277,19 @@ keep pointing at the devnet project):
 | `NEXT_PUBLIC_SOLANA_CLUSTER` | `mainnet-beta` |
 | `NEXT_PUBLIC_SOLANA_RPC_URL` | Helius mainnet **client** key URL from step 1 |
 | `NEXT_PUBLIC_SETTLEMENT_AUTHORITY` | mainnet settlement authority **public** key from step 2 |
+| `SITE_URL` | `https://solarium-mkt.cc` — canonical origin, no trailing slash. **Production scope only** |
 | `COINGECKO_API_KEY` | *Optional.* CoinGecko **Demo** (free) key — see below |
 
-That's the complete set. Every variable but the last is `NEXT_PUBLIC_*`.
+That's the complete set. Every variable but the last two is `NEXT_PUBLIC_*`.
+
+**`SITE_URL` is what every canonical, `og:url`, `robots.txt` and `sitemap.xml`
+entry is built against** (`lib/seo/site.ts`). Scope it to **Production only**: a
+preview deployment that inherits the production value advertises production
+canonicals from a preview URL, which is the standard way to get preview content
+indexed under the real domain. Unset, the code falls back to Vercel's
+per-environment `VERCEL_PROJECT_PRODUCTION_URL`, then to `http://localhost:3000`.
+Like `COINGECKO_API_KEY` it is read on the server per request, so a change takes
+effect without a rebuild.
 
 **`COINGECKO_API_KEY` is the one server-only variable, and the only optional
 one.** Get a free Demo key at <https://www.coingecko.com/en/developers/dashboard>

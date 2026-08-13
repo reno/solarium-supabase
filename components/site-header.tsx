@@ -33,7 +33,7 @@ export async function SiteHeader() {
     };
   }
 
-  const links = [
+  const mobileLinks = [
     { href: "/", label: "Explore", icon: "compass" },
     { href: "/launchpad", label: "Launchpad", icon: "rocket" },
     ...(menuUser
@@ -42,6 +42,12 @@ export async function SiteHeader() {
           { href: "/creator", label: "Creator", icon: "palette" },
         ]
       : []),
+  ];
+
+  const links = [
+    mobileLinks[0],
+    { href: "/collections", label: "Collections", icon: "layout-grid" },
+    ...mobileLinks.slice(1),
   ];
 
   return (
@@ -127,7 +133,7 @@ export async function SiteHeader() {
         <WalletMenu user={menuUser} solUsd={solUsd} />
       </div>
     </header>
-    <MobileNav links={links} />
+    <MobileNav links={mobileLinks} />
     </>
   );
 }

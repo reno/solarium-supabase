@@ -34,13 +34,20 @@ export function FeaturedCarousel({ items }: { items: FeaturedItem[] }) {
   return (
     <Card padding="var(--space-6)">
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-6)" }}>
-        <span className="sol-label">Recently listed</span>
+        <h2 className="sol-label" style={{ margin: 0 }}>Recently listed</h2>
         <Badge tone="live" dot>Live</Badge>
       </div>
 
       <div>
         <Link href={`/nft/${item.nftId}`} style={{ display: "block", textDecoration: "none" }}>
-          <ArtTile src={item.imageUrl ?? undefined} label={item.itemName} ratio="16 / 7" />
+          <ArtTile
+            src={item.imageUrl ?? undefined}
+            label={item.itemName}
+            alt={`${item.itemName} — ${item.collectionName}`}
+            ratio="16 / 7"
+            sizes="(max-width: 1023px) 100vw, 420px"
+            priority
+          />
         </Link>
 
         {count > 1 && (

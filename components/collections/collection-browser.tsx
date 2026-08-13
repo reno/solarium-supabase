@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
@@ -198,6 +199,7 @@ export function CollectionBrowser({
                     total={e.rarityTotal ?? undefined}
                     src={e.imageUrl}
                     selected={sweep.includes(e.id)}
+                    href={`/nft/${e.id}`}
                     onOpen={() => router.push(`/nft/${e.id}`)}
                     onToggleSelect={buyable(e) ? () => toggleSweep(e.id) : undefined}
                     onBuy={buyable(e) ? () => router.push(`/nft/${e.id}`) : undefined}
@@ -207,9 +209,9 @@ export function CollectionBrowser({
             ) : (
               <Card padding={0}>
                 {shown.map((e, i) => (
-                  <div
+                  <Link
                     key={e.id}
-                    onClick={() => router.push(`/nft/${e.id}`)}
+                    href={`/nft/${e.id}`}
                     className="sol-row sol-row-items"
                     style={{
                       display: "grid",
@@ -220,9 +222,11 @@ export function CollectionBrowser({
                       padding: "0 var(--space-7)",
                       borderBottom: i === shown.length - 1 ? "none" : "1px solid var(--border-subtle)",
                       cursor: "pointer",
+                      color: "inherit",
+                      textDecoration: "none",
                     }}
                   >
-                    <ArtTile src={e.imageUrl} label="" style={{ width: 40, height: 40 }} />
+                    <ArtTile src={e.imageUrl} label="" alt="" sizes="40px" style={{ width: 40, height: 40 }} />
                     <span style={{ fontSize: "var(--text-md)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</span>
                     {e.rank != null ? (
                       <span className="sol-hide-sm">
@@ -234,7 +238,7 @@ export function CollectionBrowser({
                     <span style={{ fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums", fontSize: "var(--text-md)", color: "var(--text-primary)", textAlign: "right" }}>
                       {e.priceSol ? `${e.priceSol} SOL` : "—"}
                     </span>
-                  </div>
+                  </Link>
                 ))}
               </Card>
             )}

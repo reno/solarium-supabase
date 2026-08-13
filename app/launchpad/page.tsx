@@ -1,9 +1,18 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ArtTile, Badge, Button, Card } from "@/components/design";
 import { TabPanels } from "@/components/tab-panels";
 import { resolvePhases, type RawPhase } from "@/lib/launchpad/launchpad";
+import { pageMetadata } from "@/lib/seo/metadata";
 import { createClient } from "@/lib/supabase/server";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Launchpad",
+  description:
+    "Phased mints from Solarium creators. Buyers mint straight from a candy machine that enforces the price, window, per-wallet limit and allowlist on chain.",
+  path: "/launchpad",
+});
 
 type PhaseRow = {
   collection_id: string;
@@ -82,7 +91,7 @@ export default async function LaunchpadIndexPage() {
     <Link key={l.id} href={`/launchpad/${l.id}`} style={{ textDecoration: "none" }}>
       <Card padding={0} interactive>
         <div style={{ padding: "var(--space-4)", paddingBottom: 0 }}>
-          <ArtTile src={l.coverUrl ?? undefined} label={l.name} ratio="16 / 9" />
+          <ArtTile src={l.coverUrl ?? undefined} label={l.name} alt={`${l.name} cover art`} ratio="16 / 9" sizes="(max-width: 767px) 50vw, 300px" />
         </div>
         <div style={{ padding: "var(--space-6)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-4)" }}>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type CSSProperties } from "react";
 
 import { Icon } from "../core/Icon";
@@ -17,38 +18,42 @@ export interface TrendingRowProps {
   listed?: string;
   owners?: string;
   series?: number[];
+  href?: string;
   onClick?: () => void;
   style?: CSSProperties;
 }
 
-export function TrendingRow({ rank, name, verified, image, floor, delta, volume, listed, owners, series, onClick, style }: TrendingRowProps) {
+export function TrendingRow({ rank, name, verified, image, floor, delta, volume, listed, owners, series, href, onClick, style }: TrendingRowProps) {
   const [hover, setHover] = useState(false);
   const signed = delta?.trim().startsWith("+") || delta?.trim().startsWith("−");
   const tone = !signed ? "neutral" : delta!.trim().startsWith("−") ? "down" : "up";
   const deltaColor = tone === "down" ? "var(--price-down)" : tone === "up" ? "var(--price-up)" : "var(--text-tertiary)";
-  return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      className="sol-row sol-row-trending"
-      style={{
-        display: "grid",
-        gridTemplateColumns: "34px 1fr 96px 74px 104px 74px 78px 92px",
-        alignItems: "center",
-        gap: "var(--space-6)",
-        height: 56,
-        padding: "0 var(--space-7)",
-        borderBottom: "1px solid var(--border-subtle)",
-        cursor: "pointer",
-        background: hover ? "var(--surface-hover)" : "transparent",
-        transition: "background-color var(--dur-fast) var(--ease-out)",
-        ...style,
-      }}
-    >
+  const rootProps = {
+    onClick,
+    onMouseEnter: () => setHover(true),
+    onMouseLeave: () => setHover(false),
+    className: "sol-row sol-row-trending",
+    style: {
+      display: "grid",
+      gridTemplateColumns: "34px 1fr 96px 74px 104px 74px 78px 92px",
+      alignItems: "center",
+      gap: "var(--space-6)",
+      height: 56,
+      padding: "0 var(--space-7)",
+      borderBottom: "1px solid var(--border-subtle)",
+      cursor: "pointer",
+      color: "inherit",
+      textDecoration: "none",
+      background: hover ? "var(--surface-hover)" : "transparent",
+      transition: "background-color var(--dur-fast) var(--ease-out)",
+      ...style,
+    } satisfies CSSProperties,
+  };
+  const cells = (
+    <>
       <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>{rank}</span>
       <span style={{ display: "flex", alignItems: "center", gap: "var(--space-6)", minWidth: 0 }}>
-        <ArtTile src={image} label="" style={{ width: 34, height: 34, flex: "0 0 auto" }} />
+        <ArtTile src={image} label="" alt="" sizes="34px" style={{ width: 34, height: 34, flex: "0 0 auto" }} />
         <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-3)", minWidth: 0 }}>
           <span style={{ fontSize: "var(--text-base)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {name}
@@ -75,6 +80,8 @@ export function TrendingRow({ rank, name, verified, image, floor, delta, volume,
           </span>
         )}
       </span>
-    </div>
+    </>
   );
+
+  return href ? <Link href={href} {...rootProps}>{cells}</Link> : <div {...rootProps}>{cells}</div>;
 }

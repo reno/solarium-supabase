@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 
 import { BackLink } from "@/components/back-link";
 import { ArtTile, Badge, Button, Card, Icon } from "@/components/design";
@@ -17,6 +19,7 @@ import { serverNow } from "@/lib/format/relative-time";
 import { shortWallet } from "@/lib/format/wallet";
 import { countdownTarget, resolvePhases, type RawPhase } from "@/lib/launchpad/launchpad";
 import { getSolUsd } from "@/lib/price/sol";
+import { pageMetadata, truncate } from "@/lib/seo/metadata";
 import { createClient } from "@/lib/supabase/server";
 
 type RawCandyMachine = {
@@ -36,6 +39,58 @@ const DOT: Record<string, string> = {
   upcoming: "var(--border-strong)",
 };
 
+export const loadDrop = cache(async (id: string) => {
+  const supabase = await createClient();
+  const [collectionResult, phasesResult, machineResult] = await Promise.all([
+    supabase
+      .from("collections")
+      .select(
+        "id, name, description, cover_url, collection_address, creator_id, royalty_bps, reveal_at, creator:profiles!collections_creator_id_fkey(username, wallet_address)"
+      )
+      .eq("id", id)
+      .maybeSingle(),
+    supabase.from("mint_phases").select("*").eq("collection_id", id),
+    supabase.from("candy_machines").select("*").eq("collection_id", id).maybeSingle(),
+  ]);
+
+  return {
+    collection: collectionResult.data,
+    rawPhases: (phasesResult.data ?? []) as RawPhase[],
+    machineRow: machineResult.data as RawCandyMachine | null,
+  };
+});
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const { collection, rawPhases, machineRow } = await loadDrop(id);
+  if (!collection || rawPhases.length === 0) {
+    return { title: "Drop not found", robots: { index: false } };
+  }
+
+  const { phases, active } = resolvePhases(rawPhases);
+  const cheapest = phases.reduce<string | null>(
+    (min, p) => (min == null || parseFloat(p.priceSol) < parseFloat(min) ? p.priceSol : min),
+    null
+  );
+  const facts = [
+    machineRow ? `${machineRow.items_available} items` : null,
+    cheapest ? `mint from ${cheapest} SOL` : null,
+    active ? `${active.name} phase ${active.status}` : null,
+  ].filter(Boolean);
+
+  return pageMetadata({
+    title: `Mint ${collection.name}`,
+    description: collection.description ? truncate(collection.description) : facts.join(" · "),
+    path: `/launchpad/${id}`,
+    image: collection.cover_url,
+    imageAlt: `${collection.name} cover art`,
+  });
+}
+
 export default async function LaunchpadDetailPage({
   params,
   searchParams,
@@ -50,28 +105,19 @@ export default async function LaunchpadDetailPage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: collection } = await supabase
-    .from("collections")
-    .select(
-      "id, name, description, cover_url, collection_address, creator_id, royalty_bps, reveal_at, creator:profiles!collections_creator_id_fkey(username, wallet_address)"
-    )
-    .eq("id", id)
-    .maybeSingle();
+  const { collection, rawPhases, machineRow } = await loadDrop(id);
   if (!collection) notFound();
 
-  const [phasesResult, itemsResult, viewerProfileResult, machineResult, allowlistResult] = await Promise.all([
-    supabase.from("mint_phases").select("*").eq("collection_id", id),
+  const [itemsResult, viewerProfileResult, allowlistResult] = await Promise.all([
     supabase
       .from("nfts")
       .select("id, name, image_url, asset_address, item_number, owner_id, listings(id, price_lamports, status, seller_id, buyer_id)")
       .eq("collection_id", id)
       .order("item_number", { ascending: true }),
     user ? supabase.from("profiles").select("wallet_address").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
-    supabase.from("candy_machines").select("*").eq("collection_id", id).maybeSingle(),
     supabase.from("launchpad_allowlist").select("wallet_address").eq("collection_id", id),
   ]);
 
-  const rawPhases = (phasesResult.data ?? []) as RawPhase[];
   const viewerId = user?.id ?? null;
   const isCreator = viewerId === collection.creator_id;
   const isDraft = rawPhases.length === 0;
@@ -90,7 +136,6 @@ export default async function LaunchpadDetailPage({
     groupLabel: p.group_label ?? null,
   }));
 
-  const machineRow = machineResult.data as RawCandyMachine | null;
   const machine = machineRow
     ? {
         id: machineRow.id,
@@ -210,18 +255,35 @@ export default async function LaunchpadDetailPage({
   return (
     <main style={{ width: "100%", flex: 1 }}>
       <div style={{ position: "relative" }}>
-        <ArtTile src={collection.cover_url ?? undefined} label="launch banner · 6:1" ratio="6 / 1" radius="0" className="sol-banner" style={{ border: "none" }} />
+        <ArtTile
+          src={collection.cover_url ?? undefined}
+          label="launch banner · 6:1"
+          alt={`${collection.name} banner`}
+          ratio="6 / 1"
+          radius="0"
+          className="sol-banner"
+          sizes="100vw"
+          priority
+          style={{ border: "none" }}
+        />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, var(--bg-page), transparent 65%)" }} />
       </div>
 
       <div style={{ maxWidth: 1180, margin: "0 auto", padding: "0 var(--page-gutter) var(--space-13)" }}>
         <div style={{ marginTop: "var(--space-6)" }}>
-          <BackLink />
+          <BackLink label="Launchpad" href="/launchpad" />
         </div>
 
         <div className="sol-split" style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: "var(--space-10)", marginTop: "var(--space-6)", alignItems: "start" }}>
           <div>
-            <ArtTile src={collection.cover_url ?? undefined} label="mint preview · 1:1" radius="var(--radius-card)" style={{ maxWidth: 520 }} />
+            <ArtTile
+              src={collection.cover_url ?? undefined}
+              label="mint preview · 1:1"
+              alt={`${collection.name} cover art`}
+              radius="var(--radius-card)"
+              sizes="(max-width: 1023px) 100vw, 520px"
+              style={{ maxWidth: 520 }}
+            />
             <div style={{ marginTop: "var(--space-9)", maxWidth: 620 }}>
               <div style={{ display: "flex", alignItems: "center", gap: "var(--space-5)" }}>
                 <h1 style={{ font: "var(--type-h1)", letterSpacing: "var(--tracking-heading)", color: "var(--text-primary)", margin: 0 }}>{collection.name}</h1>

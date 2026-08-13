@@ -1,20 +1,31 @@
+import Image from "next/image";
 import type { CSSProperties, ReactNode } from "react";
 
 export interface ArtTileProps {
   src?: string;
   label?: string;
+  alt?: string;
   ratio?: string;
   radius?: string;
+  sizes?: string;
+  priority?: boolean;
   className?: string;
   style?: CSSProperties;
   children?: ReactNode;
 }
 
-function cssUrl(src: string): string {
-  return `url("${src.replace(/["\\]/g, "\\$&")}")`;
-}
-
-export function ArtTile({ src, label = "nft art", ratio = "1 / 1", radius = "var(--radius-media)", className, style, children }: ArtTileProps) {
+export function ArtTile({
+  src,
+  label = "nft art",
+  alt,
+  ratio = "1 / 1",
+  radius = "var(--radius-media)",
+  sizes = "(max-width: 767px) 50vw, 400px",
+  priority,
+  className,
+  style,
+  children,
+}: ArtTileProps) {
   return (
     <div
       className={className}
@@ -26,10 +37,8 @@ export function ArtTile({ src, label = "nft art", ratio = "1 / 1", radius = "var
         overflow: "hidden",
         background: src ? "var(--surface-inset)" : undefined,
         backgroundImage: src
-          ? cssUrl(src)
+          ? undefined
           : "repeating-linear-gradient(135deg, var(--surface-2) 0 6px, var(--surface-inset) 6px 12px)",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
         border: "1px solid var(--border-subtle)",
         display: "flex",
         alignItems: "center",
@@ -37,11 +46,21 @@ export function ArtTile({ src, label = "nft art", ratio = "1 / 1", radius = "var
         ...style,
       }}
     >
-      {!src ? (
+      {src ? (
+        <Image
+          src={src}
+          alt={alt ?? label}
+          fill
+          unoptimized
+          sizes={sizes}
+          priority={priority}
+          style={{ objectFit: "cover" }}
+        />
+      ) : (
         <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)", color: "var(--text-tertiary)", letterSpacing: "0.04em" }}>
           {label}
         </span>
-      ) : null}
+      )}
       {children}
     </div>
   );
