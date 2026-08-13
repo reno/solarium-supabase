@@ -83,6 +83,7 @@ export function CollectionBrowser({
   const [sweep, setSweep] = useState<string[]>([]);
   const [sort, setSort] = useState(SORTS[0]);
   const [view, setView] = useState<"grid" | "list">("grid");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const toggle = (t: string, v: string) =>
     setSelected((s) => {
@@ -122,7 +123,7 @@ export function CollectionBrowser({
   const toggleSweep = (idv: string) => setSweep((s) => (s.includes(idv) ? s.filter((x) => x !== idv) : [...s, idv]));
 
   return (
-    <div style={{ display: "flex", gap: "var(--space-9)", paddingTop: "var(--space-7)" }}>
+    <div className="sol-browser" style={{ display: "flex", gap: "var(--space-9)", paddingTop: "var(--space-7)" }}>
       <FilterRail
         traits={traitGroups}
         selected={selected}
@@ -131,9 +132,33 @@ export function CollectionBrowser({
         onBuyNow={() => setBuyNow((v) => !v)}
         priceRange={priceRange}
         onPriceRange={setPriceRange}
+        className={filtersOpen ? "sol-rail sol-rail-open" : "sol-rail"}
+        header={
+          <div
+            className="sol-only-sm"
+            style={{
+              position: "sticky",
+              top: 0,
+              zIndex: 1,
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "var(--space-5)",
+              padding: "var(--space-7) 0",
+              background: "var(--bg-page)",
+            }}
+          >
+            <span style={{ font: "var(--type-h3)", fontSize: "var(--text-lg)", color: "var(--text-primary)" }}>Filters</span>
+            <Button variant="primary" size="sm" onClick={() => setFiltersOpen(false)}>
+              Show {shown.length} item{shown.length === 1 ? "" : "s"}
+            </Button>
+          </div>
+        }
       />
       <div style={{ flex: 1, minWidth: 0, paddingBottom: "var(--space-13)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-6)", marginBottom: "var(--space-7)" }}>
+        <div className="sol-wrap" style={{ display: "flex", alignItems: "center", gap: "var(--space-6)", marginBottom: "var(--space-7)" }}>
+          <Button className="sol-only-sm" variant="secondary" size="sm" icon="sliders-horizontal" onClick={() => setFiltersOpen(true)}>
+            Filters{chips.length > 0 ? ` · ${chips.length}` : ""}
+          </Button>
           <Tabs
             tabs={["Items", "Activity", "Offers"]}
             value={tab}
@@ -162,7 +187,7 @@ export function CollectionBrowser({
               </div>
             )}
             {view === "grid" ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "var(--grid-gap)" }}>
+              <div className="sol-cards" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "var(--grid-gap)" }}>
                 {shown.map((e) => (
                   <NftCard
                     key={e.id}
@@ -185,6 +210,7 @@ export function CollectionBrowser({
                   <div
                     key={e.id}
                     onClick={() => router.push(`/nft/${e.id}`)}
+                    className="sol-row sol-row-items"
                     style={{
                       display: "grid",
                       gridTemplateColumns: "40px 1fr 120px 110px",
@@ -198,7 +224,13 @@ export function CollectionBrowser({
                   >
                     <ArtTile src={e.imageUrl} label="" style={{ width: 40, height: 40 }} />
                     <span style={{ fontSize: "var(--text-md)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</span>
-                    {e.rank != null ? <RarityBadge rank={e.rank} total={e.rarityTotal ?? undefined} /> : <span />}
+                    {e.rank != null ? (
+                      <span className="sol-hide-sm">
+                        <RarityBadge rank={e.rank} total={e.rarityTotal ?? undefined} />
+                      </span>
+                    ) : (
+                      <span className="sol-hide-sm" />
+                    )}
                     <span style={{ fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums", fontSize: "var(--text-md)", color: "var(--text-primary)", textAlign: "right" }}>
                       {e.priceSol ? `${e.priceSol} SOL` : "—"}
                     </span>
@@ -218,16 +250,17 @@ export function CollectionBrowser({
         ) : (
           collectionOffers && collectionOffers.length > 0 ? (
             <Card padding={0}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 140px 100px", gap: "var(--space-6)", padding: "var(--space-6) var(--space-7)", borderBottom: "1px solid var(--border-subtle)" }}>
+              <div className="sol-row sol-row-coll-offers" style={{ display: "grid", gridTemplateColumns: "1fr 160px 140px 100px", gap: "var(--space-6)", padding: "var(--space-6) var(--space-7)", borderBottom: "1px solid var(--border-subtle)" }}>
                 <span style={{ font: "var(--type-label)", fontSize: "var(--text-2xs)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)", color: "var(--text-tertiary)" }}>Item</span>
                 <span style={{ font: "var(--type-label)", fontSize: "var(--text-2xs)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)", color: "var(--text-tertiary)" }}>Offer</span>
-                <span style={{ font: "var(--type-label)", fontSize: "var(--text-2xs)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)", color: "var(--text-tertiary)" }}>From</span>
+                <span className="sol-hide-sm" style={{ font: "var(--type-label)", fontSize: "var(--text-2xs)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)", color: "var(--text-tertiary)" }}>From</span>
                 <span style={{ font: "var(--type-label)", fontSize: "var(--text-2xs)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)", color: "var(--text-tertiary)" }}>Expires</span>
               </div>
               {collectionOffers.map((o, i) => (
                 <div
                   key={o.id}
                   onClick={o.nftId ? () => router.push(`/nft/${o.nftId}`) : undefined}
+                  className="sol-row sol-row-coll-offers"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1fr 160px 140px 100px",
@@ -244,7 +277,7 @@ export function CollectionBrowser({
                     {o.nftName}
                   </span>
                   <span className="sol-num" style={{ fontSize: "var(--text-md)", fontWeight: "var(--weight-semibold)", color: "var(--accent-2)" }}>{o.priceSol} SOL</span>
-                  <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <span className="sol-hide-sm" style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {o.bidderUsername ? `@${o.bidderUsername}` : o.bidderName}
                   </span>
                   <span className="sol-num" style={{ fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>{timeUntil(o.expiresAt)}</span>
@@ -261,6 +294,7 @@ export function CollectionBrowser({
 
       {sweepItems.length > 0 && (
         <div
+          className="sol-sticky-bar"
           style={{
             position: "fixed",
             left: 0,
@@ -280,7 +314,7 @@ export function CollectionBrowser({
           <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-lg)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
             {sweepItems.length} item{sweepItems.length > 1 ? "s" : ""} · {sweepTotal.toFixed(2)} SOL
           </span>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>≈ ${Math.round(sweepTotal * SOL_PER_USD).toLocaleString("en-US")}</span>
+          <span className="sol-hide-sm" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>≈ ${Math.round(sweepTotal * SOL_PER_USD).toLocaleString("en-US")}</span>
           <div style={{ marginLeft: "auto", display: "flex", gap: "var(--space-5)" }}>
             <Button variant="ghost" onClick={() => setSweep([])}>Clear</Button>
             <SweepBuyButton

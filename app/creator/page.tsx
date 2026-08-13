@@ -16,6 +16,15 @@ const LABEL: React.CSSProperties = {
   color: "var(--text-tertiary)",
 };
 
+const COLLECTION_COLUMNS: Array<[string, boolean]> = [
+  ["Collection", false],
+  ["Items", true],
+  ["Floor", false],
+  ["Volume", true],
+  ["Royalties", false],
+  ["Rate", true],
+];
+
 type ListingLite = { price_lamports: string | number; status: string };
 type NftLite = { id: string; collection_id: string; owner_id: string | null; listings: ListingLite[] | null };
 
@@ -110,7 +119,7 @@ export default async function CreatorDashboardPage() {
 
   return (
     <main style={{ maxWidth: "var(--page-max)", margin: "0 auto", width: "100%", flex: 1, padding: "var(--space-11) var(--page-gutter) var(--space-13)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-7)", marginBottom: "var(--space-9)" }}>
+      <div className="sol-wrap" style={{ display: "flex", alignItems: "center", gap: "var(--space-7)", marginBottom: "var(--space-9)" }}>
         <h1 style={{ font: "var(--type-h1)", letterSpacing: "var(--tracking-heading)", color: "var(--text-primary)", margin: 0 }}>Creator</h1>
         <Badge tone="accent">{collections.length} collection{collections.length === 1 ? "" : "s"}</Badge>
         <Link href="/launchpad/apply" style={{ marginLeft: "auto", textDecoration: "none" }}>
@@ -124,7 +133,7 @@ export default async function CreatorDashboardPage() {
         </p>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "var(--space-6)", marginBottom: "var(--space-6)" }}>
+          <div className="sol-cols-4" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "var(--space-6)", marginBottom: "var(--space-6)" }}>
             {kpis.map((k) => (
               <Card key={k.l} padding="var(--space-7)">
                 <div style={LABEL}>{k.l}</div>
@@ -145,21 +154,21 @@ export default async function CreatorDashboardPage() {
 
           <h2 className="sol-label" style={{ margin: "0 0 var(--space-6)", fontSize: "var(--text-md)", color: "var(--text-primary)" }}>Collections</h2>
           <Card padding={0} style={{ marginBottom: "var(--space-10)" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 110px 120px 120px 70px", gap: "var(--space-6)", padding: "var(--space-6) var(--space-7)", borderBottom: "1px solid var(--border-subtle)" }}>
-              {["Collection", "Items", "Floor", "Volume", "Royalties", "Rate"].map((h) => (
-                <span key={h} style={LABEL}>{h}</span>
+            <div className="sol-row sol-row-collections" style={{ display: "grid", gridTemplateColumns: "1fr 80px 110px 120px 120px 70px", gap: "var(--space-6)", padding: "var(--space-6) var(--space-7)", borderBottom: "1px solid var(--border-subtle)" }}>
+              {COLLECTION_COLUMNS.map(([h, hideSm]) => (
+                <span key={h} className={hideSm ? "sol-hide-sm" : undefined} style={LABEL}>{h}</span>
               ))}
             </div>
             {collections.map((c, i) => {
               const a = agg.get(c.id)!;
               return (
-                <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1fr 80px 110px 120px 120px 70px", gap: "var(--space-6)", alignItems: "center", height: 52, padding: "0 var(--space-7)", borderBottom: i === collections.length - 1 ? "none" : "1px solid var(--border-subtle)" }}>
+                <div key={c.id} className="sol-row sol-row-collections" style={{ display: "grid", gridTemplateColumns: "1fr 80px 110px 120px 120px 70px", gap: "var(--space-6)", alignItems: "center", height: 52, padding: "0 var(--space-7)", borderBottom: i === collections.length - 1 ? "none" : "1px solid var(--border-subtle)" }}>
                   <span style={{ fontSize: "var(--text-base)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</span>
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: "var(--text-body)" }}>{a.items}</span>
+                  <span className="sol-hide-sm" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: "var(--text-body)" }}>{a.items}</span>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: "var(--text-body)" }}>{a.floor !== null ? `${lamportsToSol(a.floor)} SOL` : "—"}</span>
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: "var(--text-body)" }}>{lamportsToSol(a.volume)} SOL</span>
+                  <span className="sol-hide-sm" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: "var(--text-body)" }}>{lamportsToSol(a.volume)} SOL</span>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: "var(--price-up)" }}>{lamportsToSol(a.royalty)} SOL</span>
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: "var(--text-secondary)" }}>{((c.royalty_bps ?? 0) / 100).toFixed(1)}%</span>
+                  <span className="sol-hide-sm" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: "var(--text-secondary)" }}>{((c.royalty_bps ?? 0) / 100).toFixed(1)}%</span>
                 </div>
               );
             })}

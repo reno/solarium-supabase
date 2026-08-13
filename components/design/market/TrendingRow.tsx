@@ -31,6 +31,7 @@ export function TrendingRow({ rank, name, verified, image, floor, delta, volume,
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      className="sol-row sol-row-trending"
       style={{
         display: "grid",
         gridTemplateColumns: "34px 1fr 96px 74px 104px 74px 78px 92px",
@@ -59,19 +60,21 @@ export function TrendingRow({ rank, name, verified, image, floor, delta, volume,
         {floor}
       </span>
       <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: deltaColor }}>{delta}</span>
-      <span style={{ fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums", fontSize: "var(--text-md)", color: "var(--text-body)" }}>{volume}</span>
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: "var(--text-secondary)" }}>{listed}</span>
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: "var(--text-secondary)" }}>{owners}</span>
-      {series?.length ? (
-        <Sparkline data={series} tone={tone} width={88} height={26} />
-      ) : (
-        <span
-          title="No trades yet"
-          style={{ display: "flex", alignItems: "center", width: 88, height: 26, fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}
-        >
-          no trades
-        </span>
-      )}
+      <span className="sol-hide-sm" style={{ fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums", fontSize: "var(--text-md)", color: "var(--text-body)" }}>{volume}</span>
+      <span className="sol-hide-sm" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: "var(--text-secondary)" }}>{listed}</span>
+      <span className="sol-hide-sm" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-md)", color: "var(--text-secondary)" }}>{owners}</span>
+      <span className="sol-hide-sm" style={{ display: "flex", alignItems: "center" }}>
+        {series?.length ? (
+          <Sparkline data={series} tone={tone} width={88} height={26} />
+        ) : (
+          <span
+            title="No trades yet"
+            style={{ display: "flex", alignItems: "center", width: 88, height: 26, fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}
+          >
+            no trades
+          </span>
+        )}
+      </span>
     </div>
   );
 }

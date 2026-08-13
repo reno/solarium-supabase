@@ -1,0 +1,193 @@
+/* Mobile layer. The app styles elements with inline `style` objects, which beat
+   any class selector, so every rule that has to reshape an existing layout is
+   marked !important and scoped to a media query. Class names are the contract:
+   a component opts in by adding one, and nothing changes above the breakpoint. */
+
+/* ---------- always-on ---------- */
+
+.sol-only-sm {
+  display: none !important;
+}
+
+@media (max-width: 1023px) {
+  .sol-split {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .sol-cols-4,
+  .sol-cols-5 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --page-gutter: var(--space-7);
+    --grid-gap: var(--space-5);
+    --nav-h: 52px;
+    --mobile-nav-h: 56px;
+
+    --text-4xl: 30px;
+    --text-3xl: 24px;
+    --text-2xl: 20px;
+    --text-xl: 18px;
+
+    --control-h-sm: 32px;
+    --control-h-md: 38px;
+    --control-h-lg: 44px;
+  }
+
+  .sol-only-sm {
+    display: flex !important;
+  }
+  .sol-hide-sm {
+    display: none !important;
+  }
+
+  /* ---------- layout ---------- */
+
+  .sol-cols-2,
+  .sol-cols-4,
+  .sol-cols-5 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .sol-cols-1-sm {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .sol-cards {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+  }
+  .sol-cards-wide {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)) !important;
+  }
+  .sol-stack {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .sol-wrap {
+    flex-wrap: wrap !important;
+  }
+  .sol-full-sm {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: 1 1 auto !important;
+  }
+  .sol-banner {
+    aspect-ratio: 3 / 1 !important;
+  }
+  .sol-stats {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: var(--space-7) var(--space-6) !important;
+  }
+
+  /* ---------- table rows ---------- */
+
+  .sol-row {
+    gap: var(--space-5) !important;
+    padding-left: var(--space-6) !important;
+    padding-right: var(--space-6) !important;
+  }
+  .sol-row-trending {
+    grid-template-columns: 22px minmax(0, 1fr) 78px 58px !important;
+  }
+  .sol-row-activity {
+    grid-template-columns: 68px minmax(0, 1fr) 82px 44px !important;
+  }
+  .sol-row-activity-compact {
+    grid-template-columns: 62px minmax(0, 1fr) 78px 40px !important;
+  }
+  .sol-row-offers {
+    grid-template-columns: minmax(0, 1fr) 84px 84px !important;
+  }
+  .sol-row-my-offers {
+    grid-template-columns: minmax(0, 1fr) 88px 84px !important;
+  }
+  .sol-row-collections {
+    grid-template-columns: minmax(0, 1fr) 78px 88px !important;
+  }
+  .sol-row-items {
+    grid-template-columns: 36px minmax(0, 1fr) 84px !important;
+  }
+  .sol-row-coll-offers {
+    grid-template-columns: minmax(0, 1fr) 90px 56px !important;
+  }
+  .sol-row-traits {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 60px 30px !important;
+  }
+
+  /* ---------- shell ---------- */
+
+  .sol-header {
+    gap: var(--space-5) !important;
+  }
+  .sol-header-actions {
+    gap: var(--space-4) !important;
+  }
+
+  .sol-mobile-nav {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  body {
+    padding-bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom)) !important;
+  }
+  .sol-sticky-bar {
+    bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom)) !important;
+    padding: var(--space-5) var(--page-gutter) !important;
+    gap: var(--space-5) !important;
+    flex-wrap: wrap !important;
+  }
+
+  /* ---------- overlays ---------- */
+
+  .sol-scrim {
+    padding: var(--space-6) !important;
+    align-items: flex-end !important;
+  }
+  .sol-dialog {
+    width: 100% !important;
+    margin: auto 0 0 !important;
+    max-height: calc(100dvh - var(--nav-h)) !important;
+    overflow-y: auto !important;
+  }
+  .sol-menu {
+    width: min(280px, calc(100vw - 2 * var(--page-gutter))) !important;
+  }
+  .sol-toasts {
+    left: var(--space-6) !important;
+    right: var(--space-6) !important;
+    bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom) + var(--space-5)) !important;
+  }
+  .sol-toast {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  /* ---------- filter drawer ---------- */
+
+  .sol-browser {
+    gap: 0 !important;
+    padding-top: var(--space-6) !important;
+  }
+  .sol-rail {
+    display: none !important;
+  }
+  .sol-rail-open {
+    display: block !important;
+    position: fixed !important;
+    inset: var(--nav-h) 0 0 0 !important;
+    z-index: 60 !important;
+    width: auto !important;
+    height: calc(100dvh - var(--nav-h)) !important;
+    max-height: none !important;
+    padding: 0 var(--page-gutter) calc(var(--mobile-nav-h) + var(--space-11)) !important;
+    background: var(--bg-page) !important;
+    overflow-y: auto !important;
+  }
+
+  /* iOS zooms the page when a focused field is under 16px. */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

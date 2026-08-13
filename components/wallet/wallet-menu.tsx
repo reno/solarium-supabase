@@ -81,11 +81,12 @@ export function WalletMenu({ user, solUsd }: { user: WalletMenuUser | null; solU
           >
             <Avatar username={user.username} avatarUrl={user.avatarUrl} size={22} />
             {balance !== null && (
-              <span className="sol-num" style={{ fontSize: "var(--text-xs)", color: "var(--text-primary)" }}>
+              <span className="sol-num sol-hide-sm" style={{ fontSize: "var(--text-xs)", color: "var(--text-primary)" }}>
                 {solShort(balance)} SOL
               </span>
             )}
             <span
+              className="sol-hide-sm"
               style={{
                 fontFamily: user.username ? "var(--font-sans)" : "var(--font-mono)",
                 fontSize: "var(--text-xs)",
@@ -101,6 +102,7 @@ export function WalletMenu({ user, solUsd }: { user: WalletMenuUser | null; solU
             <>
               <div style={{ position: "fixed", inset: 0, zIndex: 70 }} onClick={() => setOpen(false)} />
               <div
+                className="sol-menu"
                 style={{
                   position: "absolute",
                   right: 0,
@@ -195,10 +197,12 @@ export function WalletMenu({ user, solUsd }: { user: WalletMenuUser | null; solU
           setOpen((prev) => !prev);
         }}
       >
-        Connect wallet
+        <span className="sol-hide-sm">Connect wallet</span>
+        <span className="sol-only-sm">Connect</span>
       </Button>
       {open && (
         <div
+          className="sol-menu"
           style={{
             position: "absolute",
             right: 0,

@@ -163,7 +163,7 @@ export default async function Home() {
 
   return (
     <main style={{ maxWidth: "var(--page-max)", margin: "0 auto", width: "100%", flex: 1, padding: "var(--space-11) var(--page-gutter) var(--space-13)" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1.75fr 1fr", gap: "var(--space-9)", marginBottom: "var(--space-11)", alignItems: "start" }}>
+      <div className="sol-split" style={{ display: "grid", gridTemplateColumns: "1.75fr 1fr", gap: "var(--space-9)", marginBottom: "var(--space-11)", alignItems: "start" }}>
         <div>
           <h1 style={{ font: "var(--type-display)", letterSpacing: "var(--tracking-display)", color: "var(--text-primary)", margin: 0, maxWidth: 800 }}>
             Trade Solana NFTs at the floor.
@@ -171,7 +171,7 @@ export default async function Home() {
           <p style={{ font: "var(--type-body)", fontSize: "var(--text-lg)", color: "var(--text-secondary)", maxWidth: 520, marginTop: "var(--space-6)", textWrap: "pretty" }}>
             Live listings across every collection. Sweep the floor, place bids, and settle in one transaction.
           </p>
-          <div style={{ display: "flex", gap: "var(--space-5)", marginTop: "var(--space-8)" }}>
+          <div className="sol-wrap" style={{ display: "flex", gap: "var(--space-5)", marginTop: "var(--space-8)" }}>
             <Link href={trending[0] ? `/collections/${trending[0].collectionId}` : "/launchpad"} style={{ textDecoration: "none" }}>
               <Button variant="primary" icon="zap">Start trading</Button>
             </Link>
@@ -179,7 +179,7 @@ export default async function Home() {
               <Button variant="secondary" icon="rocket">Launch a collection</Button>
             </Link>
           </div>
-          <div style={{ display: "flex", gap: "var(--space-11)", marginTop: "var(--space-10)", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--space-9)", marginTop: "var(--space-10)", flexWrap: "wrap" }}>
             {heroStats.map(([label, value]) => (
               <div key={label}>
                 <div className="sol-label" style={{ fontSize: "var(--text-2xs)" }}>{label}</div>
@@ -192,7 +192,7 @@ export default async function Home() {
         <FeaturedCarousel items={featuredItems} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.75fr 1fr", gap: "var(--space-9)", alignItems: "start" }}>
+      <div className="sol-split" style={{ display: "grid", gridTemplateColumns: "1.75fr 1fr", gap: "var(--space-9)", alignItems: "start" }}>
         <TrendingTable rows={trending} />
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-5)", marginBottom: "var(--space-7)", height: 30 }}>

@@ -5,10 +5,10 @@ import { usePathname } from "next/navigation";
 
 type NavLink = { href: string; label: string };
 
-export function SiteNav({ links }: { links: NavLink[] }) {
+export function SiteNav({ links, className }: { links: NavLink[]; className?: string }) {
   const pathname = usePathname();
   return (
-    <nav style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+    <nav className={className} style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
       {links.map((l) => {
         const active = l.href === "/" ? pathname === "/" : pathname.startsWith(l.href);
         return (

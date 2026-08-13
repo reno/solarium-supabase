@@ -32,6 +32,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ showToast }}>
       {children}
       <div
+        className="sol-toasts"
         style={{
           position: "fixed",
           bottom: "var(--space-8)",

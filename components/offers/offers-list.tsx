@@ -97,6 +97,7 @@ export function OffersList({
         return (
           <div
             key={o.id}
+            className="sol-row sol-row-offers"
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 110px 96px 150px",
@@ -122,7 +123,7 @@ export function OffersList({
             <span style={{ fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums", fontSize: "var(--text-md)", color: "var(--accent-2)" }}>
               {o.priceSol} SOL
             </span>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>
+            <span className="sol-hide-sm" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>
               {o.status === "accepted" ? "—" : untilLabel(o.expiresAt)}
             </span>
             <span style={{ justifySelf: "end" }}>

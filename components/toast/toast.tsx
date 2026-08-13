@@ -29,6 +29,7 @@ export function Toast({ title, message, type = "success", onDismiss }: ToastProp
 
   return (
     <div
+      className="sol-toast"
       style={{
         pointerEvents: "auto",
         display: "flex",

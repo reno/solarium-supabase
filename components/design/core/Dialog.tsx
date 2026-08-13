@@ -21,6 +21,7 @@ export function Dialog({ open, onClose, title, footer, width = 420, children, st
   return createPortal(
     <div
       onClick={onClose}
+      className="sol-scrim"
       style={{
         position: "fixed",
         inset: 0,
@@ -38,6 +39,7 @@ export function Dialog({ open, onClose, title, footer, width = 420, children, st
         role="dialog"
         aria-modal="true"
         onClick={(e: MouseEvent) => e.stopPropagation()}
+        className="sol-dialog"
         style={{
           width,
           maxWidth: "100%",

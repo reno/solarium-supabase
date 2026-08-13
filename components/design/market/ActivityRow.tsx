@@ -36,6 +36,7 @@ export function ActivityRow({ kind = "sale", item, image, collection, price, cur
     <div
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      className={compact ? "sol-row sol-row-activity-compact" : "sol-row sol-row-activity"}
       style={{
         display: "grid",
         gridTemplateColumns: compact ? "72px 1fr 92px 48px" : "88px 1fr 110px 96px 96px 56px",
@@ -66,8 +67,8 @@ export function ActivityRow({ kind = "sale", item, image, collection, price, cur
         {price}
         <span style={{ fontSize: "0.78em", marginLeft: 3, color: "var(--text-secondary)" }}>{currency}</span>
       </span>
-      {compact ? null : <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-secondary)" }}>{from}</span>}
-      {compact ? null : <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-secondary)" }}>{to}</span>}
+      {compact ? null : <span className="sol-hide-sm" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-secondary)" }}>{from}</span>}
+      {compact ? null : <span className="sol-hide-sm" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-secondary)" }}>{to}</span>}
       <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)", textAlign: "right" }}>{time}</span>
     </div>
   );

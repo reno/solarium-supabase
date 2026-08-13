@@ -169,7 +169,7 @@ export default async function NftDetailPage({
         <BackLink label={collection?.name ?? "Back"} />
       </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(340px, 1fr) 1.2fr", gap: "var(--space-10)", alignItems: "start" }}>
+        <div className="sol-split" style={{ display: "grid", gridTemplateColumns: "minmax(340px, 1fr) 1.2fr", gap: "var(--space-10)", alignItems: "start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>
             <ArtTile src={unrevealed ? undefined : row.image_url} label={unrevealed ? "unrevealed" : row.name} radius="var(--radius-card)">
               {unrevealed && collection?.reveal_at ? (
@@ -313,7 +313,7 @@ export default async function NftDetailPage({
             panels={{
               traits:
                 traits.length > 0 ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "var(--space-5)" }}>
+                  <div className="sol-cards" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "var(--space-5)" }}>
                     {traits.map((t) => (
                       <div key={t.trait} style={{ background: "var(--surface-card)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-card)", padding: "var(--space-6)" }}>
                         <div style={{ font: "var(--type-label)", fontSize: "var(--text-2xs)", textTransform: "uppercase", letterSpacing: "var(--tracking-label)", color: "var(--text-tertiary)" }}>{t.trait}</div>
@@ -333,7 +333,7 @@ export default async function NftDetailPage({
                   <p style={{ margin: 0, fontSize: "var(--text-md)", color: "var(--text-tertiary)" }}>No active offers.</p>
                 ),
               activity: (
-                <div style={{ display: "grid", gridTemplateColumns: showHistory ? "1fr 1.4fr" : "1fr", gap: "var(--space-6)", alignItems: "start" }}>
+                <div className="sol-cols-1-sm" style={{ display: "grid", gridTemplateColumns: showHistory ? "1fr 1.4fr" : "1fr", gap: "var(--space-6)", alignItems: "start" }}>
                   {showHistory && (
                     <Card padding="var(--space-7)">
                       <FloorChartCard data={priceSeries} height={160} />
@@ -351,7 +351,7 @@ export default async function NftDetailPage({
                 </div>
               ),
               details: (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-6)", alignItems: "start" }}>
+                <div className="sol-cols-1-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-6)", alignItems: "start" }}>
                   <Card padding="var(--space-7)">
                     {details.map(([k, v], i) => (
                       <div

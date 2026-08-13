@@ -192,7 +192,7 @@ export default async function PortfolioPage() {
     <main style={{ maxWidth: "var(--page-max)", margin: "0 auto", width: "100%", flex: 1, padding: "var(--space-11) var(--page-gutter) var(--space-13)" }}>
       <h1 style={{ font: "var(--type-h1)", letterSpacing: "var(--tracking-heading)", color: "var(--text-primary)", margin: "0 0 var(--space-9)" }}>Portfolio</h1>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr) 1.4fr", gap: "var(--space-6)", marginBottom: "var(--space-10)" }}>
+      <div className="sol-cols-5" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr) 1.4fr", gap: "var(--space-6)", marginBottom: "var(--space-10)" }}>
         {kpis.map((k) => (
           <Card key={k.l} padding="var(--space-7)">
             <div style={LABEL}>{k.l}</div>

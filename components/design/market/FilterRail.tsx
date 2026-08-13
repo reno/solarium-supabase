@@ -24,6 +24,8 @@ export interface FilterRailProps {
   onBuyNow?: (e: ChangeEvent<HTMLInputElement>) => void;
   priceRange?: { min?: string; max?: string };
   onPriceRange?: (range: { min?: string; max?: string }) => void;
+  className?: string;
+  header?: ReactNode;
   style?: CSSProperties;
 }
 
@@ -61,9 +63,10 @@ function Section({ title, count, children, defaultOpen = true }: { title: string
   );
 }
 
-export function FilterRail({ traits = [], selected = {}, onToggle, buyNow, onBuyNow, priceRange, onPriceRange, style }: FilterRailProps) {
+export function FilterRail({ traits = [], selected = {}, onToggle, buyNow, onBuyNow, priceRange, onPriceRange, className, header, style }: FilterRailProps) {
   return (
     <aside
+      className={className}
       style={{
         width: "var(--rail-w)",
         flex: "0 0 auto",
@@ -76,6 +79,7 @@ export function FilterRail({ traits = [], selected = {}, onToggle, buyNow, onBuy
         ...style,
       }}
     >
+      {header}
       <div style={{ padding: "var(--space-6) var(--space-4)", borderBottom: "1px solid var(--border-subtle)" }}>
         <Switch checked={buyNow} onChange={onBuyNow} label="Buy now only" />
       </div>

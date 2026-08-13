@@ -10,6 +10,7 @@ export interface CollectionStat {
 export interface CollectionStatsBarProps {
   stats: CollectionStat[];
   compact?: boolean;
+  className?: string;
   style?: CSSProperties;
 }
 
@@ -36,9 +37,10 @@ function Stat({ label, value, sub, tone }: CollectionStat) {
   );
 }
 
-export function CollectionStatsBar({ stats = [], compact, style }: CollectionStatsBarProps) {
+export function CollectionStatsBar({ stats = [], compact, className, style }: CollectionStatsBarProps) {
   return (
     <div
+      className={className ? `sol-stats ${className}` : "sol-stats"}
       style={{
         display: "flex",
         alignItems: "center",

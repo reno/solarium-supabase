@@ -5,6 +5,7 @@ export interface ArtTileProps {
   label?: string;
   ratio?: string;
   radius?: string;
+  className?: string;
   style?: CSSProperties;
   children?: ReactNode;
 }
@@ -13,9 +14,10 @@ function cssUrl(src: string): string {
   return `url("${src.replace(/["\\]/g, "\\$&")}")`;
 }
 
-export function ArtTile({ src, label = "nft art", ratio = "1 / 1", radius = "var(--radius-media)", style, children }: ArtTileProps) {
+export function ArtTile({ src, label = "nft art", ratio = "1 / 1", radius = "var(--radius-media)", className, style, children }: ArtTileProps) {
   return (
     <div
+      className={className}
       style={{
         position: "relative",
         aspectRatio: ratio,
